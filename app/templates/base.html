@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Tout Compte Fait{% endblock %}</title>
+    <link rel="manifest" href="{{ url_for('pwa.manifest') }}">
+    <link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}" sizes="192x192" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-title" content="Tout Compte Fait">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() { navigator.serviceWorker.register('{{ url_for('pwa.service_worker') }}'); });
+      }
+    </script>
     <link href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <script>

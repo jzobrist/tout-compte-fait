@@ -23,3 +23,14 @@ def test_dashboard_loads(logged_in_client, db):
 def test_dashboard_month_navigation(logged_in_client, db):
     resp = logged_in_client.get('/?year=2026&month=4')
     assert resp.status_code == 200
+
+
+def test_dashboard_month_name_is_french(logged_in_client, db):
+    html = logged_in_client.get('/?year=2026&month=11').get_data(as_text=True)
+    assert 'Novembre 2026' in html
+    assert 'November' not in html
+
+
+def test_dashboard_chart_labels_are_french(logged_in_client, db):
+    html = logged_in_client.get('/?year=2026&month=11').get_data(as_text=True)
+    assert 'nov. 2026' in html and 'Nov 2026' not in html

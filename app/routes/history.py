@@ -1,4 +1,3 @@
-import calendar
 from datetime import date
 from flask import Blueprint, render_template
 from flask_login import login_required, current_user
@@ -9,6 +8,7 @@ from app.models.operation import Operation
 from app.services.access_service import get_current_pot
 from app.services.budget_service import get_category_effective_budget, get_spent_for_category
 from flask_wtf import FlaskForm
+from app.services.alert_service import MONTHS_FR
 
 history_bp = Blueprint('history', __name__, url_prefix='/history')
 
@@ -46,7 +46,7 @@ def index():
             )
             months.append({
                 'bm': bm,
-                'label': f"{calendar.month_name[m]} {y}",
+                'label': f"{MONTHS_FR[m - 1].capitalize()} {y}",
                 'cat_data': cat_data,
                 'operations': operations,
                 'total_income': bm.total_income,

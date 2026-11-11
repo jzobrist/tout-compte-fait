@@ -212,6 +212,8 @@ def check_free_money_alerts(pot, today):
 
 MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août',
              'septembre', 'octobre', 'novembre', 'décembre']
+MONTHS_FR_ABBR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août',
+                  'sept.', 'oct.', 'nov.', 'déc.']
 
 
 def month_label(year, month):

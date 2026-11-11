@@ -50,6 +50,7 @@ def create_app(config_name=None):
     from .routes.accounts import accounts_bp
     from .routes.bank import bank_bp
     from .routes.plan import plan_bp
+    from .routes.pwa import pwa_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -63,6 +64,7 @@ def create_app(config_name=None):
     app.register_blueprint(accounts_bp)
     app.register_blueprint(bank_bp)
     app.register_blueprint(plan_bp)
+    app.register_blueprint(pwa_bp)
 
     @app.context_processor
     def inject_pots():

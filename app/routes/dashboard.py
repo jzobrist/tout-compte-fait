@@ -8,7 +8,7 @@ from app.models.income import Income
 from app.extensions import db
 from app.services.access_service import get_current_pot, load_pot_object_or_404
 from app.services.balance_service import free_money
-from app.services.alert_service import free_money_alerts
+from app.services.alert_service import MONTHS_FR, MONTHS_FR_ABBR, free_money_alerts
 from app.services.budget_service import (
     get_or_create_budget_month, recalculate_budget_month,
     get_category_effective_budget, get_spent_for_category, compute_daily_metrics, pot_spent_total,
@@ -76,7 +76,7 @@ def index():
     return render_template('dashboard/index.html',
         bm=bm, total_income=total_income, cat_data=cat_data, alerts=alerts,
         year=year, month=month, today=today,
-        month_name=calendar.month_name[month],
+        month_name=MONTHS_FR[month - 1].capitalize(),
         chart_data=chart_data,
         prev_year=prev_y, prev_month=prev_m,
         next_month=next_month,
@@ -102,7 +102,6 @@ def _next_month(year, month, current_bm_year, current_bm_month):
 
 def _build_chart_data(pot, year, month, n):
     """Build income vs spending data for last n months."""
-    import calendar as cal
     from app.services.contribution_service import expected_contributions
     months = []
     y, m = year, month
@@ -115,7 +114,7 @@ def _build_chart_data(pot, year, month, n):
 
     labels, incomes_data, spendings_data = [], [], []
     for y_i, m_i in months:
-        labels.append(f"{cal.month_abbr[m_i]} {y_i}")
+        labels.append(f"{MONTHS_FR_ABBR[m_i - 1]} {y_i}")
         bm = BudgetMonth.query.filter_by(pot_id=pot.id, year=y_i, month=m_i).first()
         inc = (bm.total_income if bm else 0.0) + expected_contributions(pot, y_i, m_i)
         spent = pot_spent_total(pot.id, y_i, m_i)
@@ -144,7 +143,7 @@ def render_category_detail(category, values):
     year, month = _detail_month(values, category)
     detail = category_detail(category, year, month, current_user)
     return render_template('dashboard/_category_detail.html', detail=detail, year=year, month=month,
-                           month_name=calendar.month_name[month])
+                           month_name=MONTHS_FR[month - 1].capitalize())
 
 
 def detail_response_or_none():
