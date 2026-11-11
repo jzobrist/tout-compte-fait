@@ -18,7 +18,7 @@ class ContributionPlan(db.Model):
     pot_id = db.Column(db.Integer, db.ForeignKey('pot.id'), nullable=False)
     year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=False)
-    position = db.Column(db.Float, nullable=False, default=0.0)
+    position = db.Column(db.Double, nullable=False, default=0.0)
     forced = db.Column(db.Boolean, nullable=False, default=False)
     status = db.Column(db.String(10), nullable=False, default='draft')  # 'draft' | 'validated'
     validated_negative = db.Column(db.Boolean, nullable=False, default=False)
@@ -52,7 +52,7 @@ class ContributionShare(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('contribution_plan.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0.0)
+    amount = db.Column(db.Double, nullable=False, default=0.0)
 
     plan = db.relationship('ContributionPlan', back_populates='shares')
 
@@ -64,7 +64,7 @@ class ProvisionAllocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('contribution_plan.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id', ondelete='CASCADE'), nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0.0)
+    amount = db.Column(db.Double, nullable=False, default=0.0)
 
     plan = db.relationship('ContributionPlan', back_populates='allocations')
 
@@ -77,6 +77,6 @@ class ContributionCap(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('contribution_plan.id', ondelete='CASCADE'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    cap = db.Column(db.Float, nullable=True)
+    cap = db.Column(db.Double, nullable=True)
 
     plan = db.relationship('ContributionPlan', back_populates='caps')

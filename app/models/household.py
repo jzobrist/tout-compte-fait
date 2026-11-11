@@ -13,7 +13,7 @@ class Household(db.Model):
     name = db.Column(db.String(120), nullable=False)
     invite_code = db.Column(db.String(64), unique=True, nullable=True)
     invite_expires_at = db.Column(db.DateTime, nullable=True)
-    solidarity_margin = db.Column(db.Float, nullable=False, default=0.0, server_default='0')
+    solidarity_margin = db.Column(db.Double, nullable=False, default=0.0, server_default='0')
 
     users = db.relationship('User', back_populates='household', lazy='dynamic')
 

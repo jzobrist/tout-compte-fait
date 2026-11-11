@@ -1,5 +1,6 @@
-{% set spent = item.metrics.spent %}
-{% set effective = item.metrics.effective %}
+{# Compared to the cent: binary floats never make an exactly spent envelope look overspent #}
+{% set spent = item.metrics.spent|round(2) %}
+{% set effective = item.metrics.effective|round(2) %}
 {% if effective > 0 %}
   {% set pct_raw = (spent / effective * 100) %}
 {% elif spent > 0 %}
@@ -39,7 +40,7 @@
   </div>
   <div class="cat-meta">
     <span>{{ spent|money }}€ dépensé · {{ item.metrics.remaining_daily|money }}€/j restant</span>
-    <span class="cat-balance {{ 'ok' if item.metrics.balance >= 0 else 'danger' }}">
+    <span class="cat-balance {{ 'ok' if item.metrics.balance|round(2) >= 0 else 'danger' }}">
       {{ item.metrics.balance|money }}€
     </span>
   </div>

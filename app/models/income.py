@@ -8,7 +8,7 @@ class Income(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     pot_id = db.Column(db.Integer, db.ForeignKey('pot.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Double, nullable=False)
     date = db.Column(db.Date, nullable=False, default=date.today)
     label = db.Column(db.String(200), nullable=True)
     operation_id = db.Column(

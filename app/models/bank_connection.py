@@ -59,7 +59,7 @@ class PendingBankMovement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     bank_account_id = db.Column(db.Integer, db.ForeignKey('bank_account.id'), nullable=False)
     date = db.Column(db.Date, nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Double, nullable=False)
     direction = db.Column(db.String(10), nullable=False)
     label = db.Column(db.String(200), nullable=True)
 

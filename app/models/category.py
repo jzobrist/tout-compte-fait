@@ -10,10 +10,10 @@ class Category(db.Model):
     pot_id = db.Column(db.Integer, db.ForeignKey('pot.id'), nullable=False)
     # 'fixed_auto' | 'fixed_amount' | 'dynamic'
     type = db.Column(db.String(20), nullable=False)
-    amount = db.Column(db.Float, nullable=True)          # fixed_auto, fixed_amount
-    percentage = db.Column(db.Float, nullable=True)      # dynamic (0.0–1.0)
-    min_amount = db.Column(db.Float, nullable=True)      # dynamic floor
-    max_amount = db.Column(db.Float, nullable=True)      # dynamic ceiling
+    amount = db.Column(db.Double, nullable=True)          # fixed_auto, fixed_amount
+    percentage = db.Column(db.Double, nullable=True)      # dynamic (0.0–1.0)
+    min_amount = db.Column(db.Double, nullable=True)      # dynamic floor
+    max_amount = db.Column(db.Double, nullable=True)      # dynamic ceiling
     carry_over = db.Column(db.Boolean, default=True, nullable=False)
     auto_day = db.Column(db.Integer, nullable=True)      # fixed_auto: day of month
     # personal pot, fixed types: counts against the member's reste à vivre (J6)

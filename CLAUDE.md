@@ -127,7 +127,7 @@ Production: `/register` is closed unless `ALLOW_REGISTRATION=true` (`auth.regist
 
 ### Migrations
 
-Single squashed `migrations/versions/*_initial_schema.py`; name constraints explicitly (SQLite-portable). The pre-squash dev DB was backed up as `instance/tcf_dev.db.bak` (starting from an empty DB was approved).
+Single squashed `migrations/versions/*_initial_schema.py`; name constraints explicitly (SQLite-portable). Money and ratio columns are `db.Double`, never `db.Float` (a 4-byte single-precision FLOAT on MariaDB: 37.97 became 37.970001; fixed by `e3f4a5b6c7d8`, guarded by `tests/test_money_precision.py`). Gauges and the `money` filter compare/round to the cent. The pre-squash dev DB was backed up as `instance/tcf_dev.db.bak` (starting from an empty DB was approved).
 
 ### Scheduler jobs
 

@@ -18,9 +18,9 @@ class RefloatPlan(db.Model):
     pot_id = db.Column(db.Integer, db.ForeignKey('pot.id'), nullable=False)
     year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=False)
-    deficit = db.Column(db.Float, nullable=False, default=0.0)
+    deficit = db.Column(db.Double, nullable=False, default=0.0)
     months = db.Column(db.Integer, nullable=False, default=1)
-    split = db.Column(db.Float, nullable=False, default=0.5)  # common pot: share paid by transfers
+    split = db.Column(db.Double, nullable=False, default=0.5)  # common pot: share paid by transfers
     created_at = db.Column(db.DateTime, default=_utcnow)
 
     pot = db.relationship('Pot')
@@ -37,7 +37,7 @@ class RefloatCut(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('refloat_plan.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id', ondelete='CASCADE'), nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0.0)
+    amount = db.Column(db.Double, nullable=False, default=0.0)
 
     plan = db.relationship('RefloatPlan', back_populates='cuts')
 

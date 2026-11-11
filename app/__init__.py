@@ -117,6 +117,7 @@ def create_app(config_name=None):
 
     @app.template_filter('money')
     def money_filter(value):
+        value = round(value, 2) + 0.0  # + 0.0 turns -0.0 into 0.0 (no « -0,00 »)
         return f"{value:,.2f}".replace(',', ' ').replace('.', ',')
 
     if not app.testing:

@@ -12,7 +12,7 @@ class Operation(db.Model):
     bank_account_id = db.Column(db.Integer, db.ForeignKey('bank_account.id'), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=True)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(db.Double, nullable=False)
     date = db.Column(db.Date, nullable=False, default=date.today)
     label = db.Column(db.String(200), nullable=True)
     auto_generated = db.Column(db.Boolean, default=False)
@@ -21,7 +21,7 @@ class Operation(db.Model):
     classification = db.Column(db.String(20), nullable=True)
     bank_label = db.Column(db.String(200), nullable=True)
     bank_date = db.Column(db.Date, nullable=True)
-    entered_amount = db.Column(db.Float, nullable=True)
+    entered_amount = db.Column(db.Double, nullable=True)
     # classification 'refloat_transfer': member whose transfer this credit is
     contributor_id = db.Column(
         db.Integer, db.ForeignKey('user.id', name='fk_operation_contributor_id'), nullable=True,
