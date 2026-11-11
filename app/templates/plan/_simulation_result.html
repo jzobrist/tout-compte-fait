@@ -1,0 +1,17 @@
+{# Result of the simulation: swapped alone so the salary inputs keep focus. #}
+{% if s %}{% set r = s.result %}
+{% if r.error %}
+<p class="small text-secondary mt-2 mb-0">{{ r.error }}</p>
+{% else %}
+<ul class="list-unstyled mt-2 mb-1">
+  {% for u in s.members %}
+  <li>{{ u.display_name }} devrait virer <strong>{{ r.shares.get(u.id, 0)|round(2) }}</strong> €</li>
+  {% endfor %}
+</ul>
+{% if r.adjusted %}<p class="small text-secondary mb-0">Montants ajustés par solidarité</p>{% endif %}
+{% if r.shortfall > 0.005 %}
+<div class="small text-danger">il manque {{ r.shortfall|money }} € pour que le reste à vivre soit positif</div>
+{% endif %}
+{% endif %}
+<p class="small text-secondary mt-2 mb-0">Estimation basée sur les salaires saisis et l'état actuel des comptes.</p>
+{% endif %}

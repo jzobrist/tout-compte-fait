@@ -1,0 +1,19 @@
+<form method="post" action="{{ url_for('bank.setup') }}" enctype="multipart/form-data">
+  {{ setup_form.hidden_tag() }}
+  <div class="mb-2">
+    {{ setup_form.app_id.label(class="form-label") }}
+    {{ setup_form.app_id(class="form-control", autocomplete="off") }}
+  </div>
+  <div class="mb-2">
+    {{ setup_form.pem.label(class="form-label") }}
+    {{ setup_form.pem(class="form-control", accept=".pem") }}
+  </div>
+  <div class="mb-3">
+    {{ setup_form.aspsp_name.label(class="form-label") }}
+    {{ setup_form.aspsp_name(class="form-control", list="aspsp-list", autocomplete="off") }}
+    {% if aspsp_names %}
+    <datalist id="aspsp-list">{% for n in aspsp_names %}<option value="{{ n }}">{% endfor %}</datalist>
+    {% endif %}
+  </div>
+  <button type="submit" class="btn btn-gradient btn-sm">Enregistrer</button>
+</form>

@@ -1,0 +1,66 @@
+<form hx-post="{{ url_for('operations.add') }}"
+      hx-target="#category-list"
+      hx-swap="innerHTML"
+      hx-on::after-request="bootstrap.Modal.getInstance(document.getElementById('operationModal')).hide()">
+  {{ form.hidden_tag() }}
+
+  <!-- Amount -->
+  <div class="mb-3">
+    <div class="form-label">Montant</div>
+    <div class="amount-input-wrap">
+      <span class="amount-prefix">€</span>
+      {{ form.amount(class="", placeholder="0,00", id="op-amount", style="background:transparent;border:none;outline:none;font-size:1.4rem;font-weight:700;color:var(--text-main);width:100%;") }}
+    </div>
+  </div>
+
+  <!-- Category chips -->
+  <div class="mb-3">
+    <div class="form-label">Catégorie</div>
+    <div class="cat-chips" id="cat-chips">
+      {% for val, label in form.category_id.choices %}
+      <div class="cat-chip" data-value="{{ val }}" onclick="selectChip(this)">{{ label }}</div>
+      {% endfor %}
+    </div>
+    <!-- Hidden select keeps WTForms binding -->
+    {{ form.category_id(class="d-none", id="op-category") }}
+  </div>
+
+  <!-- Date + Label -->
+  <div class="row g-2 mb-3">
+    <div class="col-6">
+      <label class="form-label">Date</label>
+      {{ form.date(class="form-control", id="op-date") }}
+    </div>
+    <div class="col-6">
+      <label class="form-label">Note <span style="font-weight:400;opacity:.6;">(opt.)</span></label>
+      {{ form.label(class="form-control", placeholder="Monoprix…") }}
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-gradient w-100 py-2">Enregistrer</button>
+</form>
+
+<script>
+(function() {
+  const chips = document.querySelectorAll('#cat-chips .cat-chip');
+  const select = document.getElementById('op-category');
+
+  function selectChip(el) {
+    chips.forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    select.value = el.dataset.value;
+  }
+  window.selectChip = selectChip;
+
+  if (chips.length > 0) selectChip(chips[0]);
+
+  const dateInput = document.getElementById('op-date');
+  if (dateInput && !dateInput.value) {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth()+1).padStart(2,'0');
+    const d = String(today.getDate()).padStart(2,'0');
+    dateInput.value = `${y}-${m}-${d}`;
+  }
+})();
+</script>

@@ -1,0 +1,483 @@
+import sys
+from datetime import date, datetime
+
+import pytest
+
+from app.models import BankAccount, BudgetMonthCategory, Category, RefloatPlan
+from app.services.budget_service import (
+    current_budget_month, get_or_create_budget_month, recalculate_budget_month,
+)
+
+HX = {'HX-Request': 'true'}
+
+
+def _now_balance_at():
+    return datetime.combine(date.today(), datetime.min.time())
+
+
+def _account(db, pot, value, name='Compte'):
+    acc = BankAccount(pot_id=pot.id, name=name, bank_name='Banque', balance_booked=value,
+                      balance_value=value, balance_at=_now_balance_at() if value is not None else None)
+    db.session.add(acc)
+    db.session.commit()
+    return acc
+
+
+def _cat(db, pot, name, type_='dynamic', pct=None, floor=None, amount=None):
+    c = Category(name=name, type=type_, percentage=pct, min_amount=floor, amount=amount,
+                 pot_id=pot.id, carry_over=False)
+    db.session.add(c)
+    db.session.commit()
+    return c
+
+
+def _income(pot, amount):
+    bm = current_budget_month(pot, date.today())
+    bm.total_income = amount
+    recalculate_budget_month(bm)
+    return bm
+
+
+def _deficit_setup(db, h, pot):
+    """Balance 100, rent 600 + Courses/Culture dynamics on 1000 income -> deficit."""
+    _account(db, pot, 100.0)
+    _cat(db, pot, 'Loyer', type_='fixed_amount', amount=600.0)
+    courses = _cat(db, pot, 'Courses', pct=0.5, floor=100.0)
+    culture = _cat(db, pot, 'Culture', pct=0.5)
+    _income(pot, 1000.0)
+    return courses, culture
+
+
+def _select(client, pot):
+    client.post(f'/pots/{pot.id}/select')
+
+
+def test_plan_page_shows_balance_and_free_money(db, household_clean):
+    h = household_clean
+    _account(db, h.common, 1234.5)
+    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=200.0)
+    _income(h.common, 1000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Solde réel' in html and 'Argent vraiment libre' in html
+    assert '1 234,50' in html
+    assert '1 034,50' in html  # 1234.50 - 200 remaining
+
+
+def test_plan_page_unknown_balance_mention(db, household_clean):
+    h = household_clean
+    _account(db, h.common, None, name='Livret CSV')
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'solde inconnu — compte Livret CSV non synchronisé' in html
+
+
+def test_plan_page_no_income_mention(db, household_clean):
+    h = household_clean
+    _account(db, h.common, 100.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'revenus du mois pas encore reçus' in html
+
+
+def test_settings_updates_months_and_split(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    h.client_a.get('/plan')
+    plan = RefloatPlan.query.filter_by(pot_id=h.common.id).one()
+    assert plan.deficit > 0
+    resp = h.client_a.post(f'/plan/{h.common.id}/settings', headers=HX,
+                           data={'months': '3', 'split': '70'})
+    assert resp.status_code == 200
+    db.session.refresh(plan)
+    assert (plan.months, plan.split) == (3, 0.7)
+    assert 'id="envelopes"' in resp.get_data(as_text=True)
+
+
+def test_cut_returns_figures_only(db, household_clean):
+    h = household_clean
+    courses, _ = _deficit_setup(db, h, h.common)
+    h.client_a.get('/plan')
+    resp = h.client_a.post(f'/plan/{h.common.id}/cut/{courses.id}', headers=HX,
+                           data={'allocation': '150'})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert 'hx-swap-oob' in html
+    assert 'type="range"' not in html
+    plan = RefloatPlan.query.filter_by(pot_id=h.common.id).one()
+    assert plan.cuts[0].amount == pytest.approx(50.0)  # brut 200 - allocation 150
+
+
+def test_close_and_reopen_envelope_routes(db, household_clean):
+    h = household_clean
+    rent = _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _income(h.common, 1000.0)
+    resp = h.client_a.post(f'/plan/{h.common.id}/envelope/{rent.id}/close', headers=HX)
+    assert resp.status_code == 200
+    bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=rent.id).one()
+    assert bmc.closed_at is not None
+    assert 'Rouvrir' in resp.get_data(as_text=True)
+    h.client_a.post(f'/plan/{h.common.id}/envelope/{rent.id}/reopen', headers=HX)
+    db.session.refresh(bmc)
+    assert bmc.closed_at is None
+
+
+def test_close_past_month_refused(db, household_clean):
+    h = household_clean
+    rent = _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
+    resp = h.client_a.post(f'/plan/{h.common.id}/envelope/{rent.id}/close', headers=HX,
+                           data={'year': '2020', 'month': '1'})
+    assert resp.status_code == 400
+
+
+def test_close_other_household_404(db, household_clean):
+    from app.models import Pot, User
+    from app.services.household_service import create_household
+    h = household_clean
+    u = User(email='z@test.com', display_name='Z')
+    u.set_password('x')
+    other = create_household('Autre', u)
+    other_common = Pot.query.filter_by(household_id=other.id, kind='common').one()
+    cat = _cat(db, other_common, 'Leur loyer', type_='fixed_amount', amount=10.0)
+    assert h.client_a.post(f'/plan/{other_common.id}/envelope/{cat.id}/close').status_code == 404
+    # category of another pot under an accessible pot id
+    assert h.client_a.post(f'/plan/{h.common.id}/envelope/{cat.id}/close').status_code == 404
+
+
+def test_personal_plan_of_partner_404(db, household_clean):
+    h = household_clean
+    resp = h.client_b.post(f'/plan/{h.personal_a.id}/settings', data={'months': '2'})
+    assert resp.status_code == 404
+
+
+def test_common_plan_hides_partner_personal_figures(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    # month already measured by J4 (before J6): its supplement logic stays untouched
+    from app.services import refloat_service
+    refloat_service.ensure_plan(h.common, current_budget_month(h.common, date.today()), date.today())
+    _income(h.personal_a, 4321.0)
+    _cat(db, h.personal_a, 'Loyer A', type_='fixed_amount', amount=4300.0)  # cap A = 21
+    _income(h.personal_b, 1000.0)
+    h.client_b.get('/plan')
+    h.client_b.post(f'/plan/{h.common.id}/settings', data={'months': '1', 'split': '100'})
+    html = h.client_b.get('/plan').get_data(as_text=True)
+    assert 'plafond atteint pour A' in html
+    assert '4 321' not in html and '4 300' not in html
+    assert '21,00' not in html  # A's capped supplement equals A's cap: hidden from B
+    assert '21,00' in h.client_a.get('/plan').get_data(as_text=True)  # A sees it
+
+
+def test_dashboard_shows_balance_card(db, household_clean):
+    h = household_clean
+    _account(db, h.common, 987.0)
+    _income(h.common, 1000.0)
+    html = h.client_a.get('/').get_data(as_text=True)
+    assert 'Solde réel' in html and '987,00' in html
+    assert 'Argent vraiment libre' in html
+    assert '/plan' in html
+
+
+# --- J6: virements vers le commun -------------------------------------------------------------
+
+def _j6_setup(db, h, salary_a=3000.0, salary_b=2000.0):
+    """Common account funded, fixed rent 2400 on the common pot; salaries for the target month."""
+    from app.services import contribution_service as cs
+    from app.services.budget_service import get_or_create_budget_month
+    _account(db, h.common, 0.0, 'Commun')
+    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=2400.0)
+    y, m = cs.target_month(h.common, date.today())
+    for pot, salary in ((h.personal_a, salary_a), (h.personal_b, salary_b)):
+        if salary is not None:
+            get_or_create_budget_month(pot.id, y, m).total_income = salary
+    db.session.commit()
+    return y, m
+
+
+def test_common_plan_waiting_shows_names_only(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h, salary_b=None)
+    html_a = h.client_a.get(f'/plan').get_data(as_text=True)
+    _select(h.client_a, h.common)
+    html_a = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'en attente du salaire de B' in html_a
+    assert '3 000' not in html_a and 'Calculer quand même' in html_a
+    _select(h.client_b, h.common)
+    html_b = h.client_b.get('/plan').get_data(as_text=True)
+    assert 'en attente de votre salaire' in html_b
+    assert '3 000' not in html_b and '2 000' not in html_b
+
+
+def test_force_then_validate_flow(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h, salary_b=None)
+    _select(h.client_a, h.common)
+    _select(h.client_b, h.common)
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'Besoin commun' in html and 'A :' in html and 'en attente de validation' in html
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    html = r.get_data(as_text=True)
+    assert 'Plan validé' in html and 'Rouvrir le plan' in html
+    assert 'Plan validé avec un reste à vivre négatif' not in html
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/reopen', headers=HX)
+    assert 'Valider le plan' in r.get_data(as_text=True)
+
+
+def test_allocation_route_rejects_non_provision(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h)
+    rent = Category.query.filter_by(name='Loyer').one()
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    r = h.client_a.post(f'/plan/{h.common.id}/allocation/{rent.id}', data={'amount': '10'}, headers=HX)
+    assert r.status_code == 400
+
+
+def test_contribution_routes_404_on_personal_pot(db, household_clean, frozen_today):
+    h = household_clean
+    for path in ('contribution/force', 'contribution/validate', 'contribution/reopen'):
+        assert h.client_a.post(f'/plan/{h.personal_a.id}/{path}').status_code == 404
+    assert h.client_a.post(f'/plan/{h.personal_b.id}/contribution/force').status_code == 404
+
+
+def test_plan_month_param_limited_to_current_or_next(db, household_clean, frozen_today):
+    h = household_clean
+    cur = current_budget_month(h.personal_a, date.today())
+    y, m = cur.year + (cur.month + 1) // 12, (cur.month + 1) % 12 + 1
+    assert h.client_a.get(f'/plan?year={y}&month={m}').status_code == 400
+    assert h.client_a.get(f'/plan?year={cur.year}&month={cur.month}').status_code == 200
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/validate', data={'year': y, 'month': m})
+    assert r.status_code == 400
+
+
+def test_personal_plan_shows_my_contribution(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get(f'/plan?year={y}&month={m}').get_data(as_text=True)
+    assert 'Besoin commun' in html
+    _select(h.client_a, h.personal_a)
+    html = h.client_a.get(f'/plan?year={y}&month={m}').get_data(as_text=True)
+    assert 'Virement vers le commun : 1 700,00 € (provisoire) — reste à faire 1 700,00 €' in html
+    assert '2 000' not in html
+
+
+def test_daily_job_prepares_plan(app, db, household_clean, frozen_today):
+    from app.models import ContributionPlan
+    from app.services.alert_service import run_daily_alerts
+    h = household_clean
+    _j6_setup(db, h)
+    assert ContributionPlan.query.count() == 0
+    run_daily_alerts(app)
+    assert ContributionPlan.query.count() == 1
+
+
+def test_allocation_slider_and_oob_figures(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _account(db, h.common, 500.0, 'Épargne')
+    prov = _cat(db, h.common, 'Voyage', type_='fixed_amount', amount=0.0)
+    prov.provision = True
+    db.session.commit()
+    _select(h.client_a, h.common)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'name="amount"' in page and 'delay:400ms' in page
+    r = h.client_a.post(f'/plan/{h.common.id}/allocation/{prov.id}', data={'amount': '200'}, headers=HX)
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and 'id="contribution-members"' in html and 'hx-swap-oob' in html
+    assert 'type="range"' not in html
+
+
+def test_allocation_allowed_after_validation_shares_frozen(db, household_clean, frozen_today):
+    from app.models import ContributionPlan
+    from app.services import contribution_service as cs
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _account(db, h.common, 500.0, 'Épargne')
+    prov = _cat(db, h.common, 'Voyage', type_='fixed_amount', amount=0.0)
+    prov.provision = True
+    db.session.commit()
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    plan = ContributionPlan.query.one()
+    assert plan.status == 'validated'
+    before = dict(cs.shares(plan))
+    r = h.client_a.post(f'/plan/{h.common.id}/allocation/{prov.id}', data={'amount': '200'}, headers=HX)
+    assert r.status_code == 200
+    db.session.refresh(plan)
+    assert plan.allocations[0].amount == 200.0
+    assert cs.shares(plan) == before
+
+
+def test_classify_income_triggers_plan(db, household_clean, frozen_today):
+    from app.models import ContributionPlan, Operation
+    from app.services import contribution_service as cs
+    from app.services.pointage_service import classify
+    h = household_clean
+    y, m = _j6_setup(db, h, salary_b=None)
+    acc = _account(db, h.personal_b, 0.0, 'Perso B')
+    day = date(y, m, 15)
+    op = Operation(pot_id=h.personal_b.id, bank_account_id=acc.id, user_id=h.user_b.id, amount=2000.0, direction='credit',
+                   label='Salaire', bank_label='Salaire', bank_reference='ref1', date=day, bank_date=day)
+    db.session.add(op)
+    db.session.commit()
+    assert ContributionPlan.query.count() == 0
+    classify(op, h.user_b, 'income')
+    assert ContributionPlan.query.count() == 1
+    assert not cs.missing_salaries(h.common, y, m)
+
+
+def _provision_setup(db, h):
+    y, m = _j6_setup(db, h)
+    _account(db, h.common, 500.0, 'Épargne')
+    prov = _cat(db, h.common, 'Voyage', type_='fixed_amount', amount=0.0)
+    prov.provision = True
+    db.session.commit()
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    return prov
+
+
+def test_validate_with_stale_snapshot_is_refused(db, household_clean, frozen_today):
+    from app.models import ContributionPlan
+    from app.services import contribution_service as cs
+    h = household_clean
+    prov = _provision_setup(db, h)
+    plan = ContributionPlan.query.one()
+    old = cs.snapshot(cs.shares(plan))
+    h.client_b.post(f'/plan/{h.common.id}/allocation/{prov.id}', data={'amount': '200'}, headers=HX)
+    assert cs.snapshot(cs.shares(plan)) != old
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/validate', data={'snapshot': old}, headers=HX)
+    assert r.status_code == 409
+    html = r.get_data(as_text=True)
+    assert 'Le plan a changé, vérifiez les montants avant de valider.' in html and 'Valider le plan' in html
+    db.session.refresh(plan)
+    assert not cs.is_validated_by(plan, h.user_a)
+    new = cs.snapshot(cs.shares(plan))
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/validate', data={'snapshot': new}, headers=HX)
+    assert r.status_code == 200 and cs.is_validated_by(plan, h.user_a)
+
+
+def test_validate_form_posts_snapshot(db, household_clean, frozen_today):
+    h = household_clean
+    _provision_setup(db, h)
+    _select(h.client_a, h.common)
+    assert 'hx-vals=' in h.client_a.get('/plan').get_data(as_text=True)
+
+
+def test_daily_pace_alerts_run_for_j6_common_month(app, db, household_clean, frozen_today, monkeypatch):
+    from app.services import alert_service
+    h = household_clean
+    _provision_setup(db, h)
+    seen = []
+    monkeypatch.setattr(alert_service, 'check_alerts_for_pot',
+                        lambda pot, *a, **kw: seen.append(pot.id) or [])
+    alert_service.run_daily_alerts(app)
+    assert h.common.id in seen
+
+
+def test_dashboard_common_j6_month_shows_contributions_as_revenus(db, household_clean, frozen_today):
+    from app.models import ContributionPlan
+    from app.services import contribution_service as cs
+    h = household_clean
+    _provision_setup(db, h)
+    plan = ContributionPlan.query.one()
+    total = sum(cs.shares(plan).values())
+    assert total > 0
+    _select(h.client_a, h.common)
+    html = h.client_a.get(f'/?year={plan.year}&month={plan.month}').get_data(as_text=True)
+    expected = f"{total:,.2f}".replace(',', ' ').replace('.', ',')
+    assert f'{expected}€' in html
+    from app.routes.dashboard import _build_chart_data
+    assert _build_chart_data(h.common, plan.year, plan.month, 1)['incomes'] == [pytest.approx(total)]
+
+
+# --- Simulation du plan à venir -----------------------------------------------------------------
+
+def test_simulation_block_shown_when_no_plan(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h, salary_b=None)
+    _select(h.client_a, h.common)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Simuler le plan de juin 2026' in html
+    assert 'id="simulation"' in html and 'name="salary_%d"' % h.user_b.id in html
+    assert 'Estimation basée sur les salaires saisis' in html
+
+
+def test_simulation_post_saves_and_returns_shares(db, household_clean, frozen_today):
+    from app.services import simulation_service as sim
+    h = household_clean
+    _j6_setup(db, h, salary_b=None)
+    get_or_create_budget_month(h.common.id, 2026, 5)   # previous month exists in real life
+    r = h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={
+        f'salary_{h.user_a.id}': '3000', f'salary_{h.user_b.id}': '2000'})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert html.count('devrait virer') == 2 and 'A devrait virer' in html
+    # only the result is swapped: the inputs (focus, caret) are not rebuilt
+    assert '<input' not in html and 'id="simulation"' not in html
+    assert sim.forecasts(h.user_a) == {h.user_a.id: 3000.0, h.user_b.id: 2000.0}
+    assert sim.forecasts(h.user_b) == {}
+    # empty field deletes the forecast
+    h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={f'salary_{h.user_b.id}': ''})
+    assert h.user_b.id not in sim.forecasts(h.user_a)
+
+
+def test_simulation_non_htmx_post_redirects(db, household_clean, frozen_today):
+    h = household_clean
+    r = h.client_a.post(f'/plan/{h.common.id}/simulation', data={f'salary_{h.user_a.id}': '10'})
+    assert r.status_code == 302
+
+
+def test_simulation_hidden_once_plan_exists(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h)
+    _select(h.client_a, h.common)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Simuler le plan de juin 2026' not in html
+    assert 'Simuler le plan de juillet 2026' in html   # the next plan stays reachable
+
+
+@pytest.mark.parametrize('value', ['abc', 'nan', 'inf', '-inf', '-5'])
+def test_simulation_rejects_bad_values(db, household_clean, frozen_today, value):
+    h = household_clean
+    r = h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX,
+                        data={f'salary_{h.user_a.id}': value})
+    assert r.status_code == 400
+
+
+def test_simulation_unknown_member_404(db, household_clean, frozen_today):
+    from app.models import Household, User
+    h = household_clean
+    other = Household(name='Autre')
+    db.session.add(other)
+    db.session.flush()
+    stranger = User(email='x@test.com', display_name='X', household_id=other.id)
+    stranger.set_password('Password1!')
+    db.session.add(stranger)
+    db.session.commit()
+    r = h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={f'salary_{stranger.id}': '10'})
+    assert r.status_code == 404
+    assert h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX,
+                           data={'salary_zzz': '10'}).status_code == 400
+
+
+def test_simulation_personal_pot_404(db, household_clean, frozen_today):
+    h = household_clean
+    assert h.client_a.post(f'/plan/{h.personal_a.id}/simulation', data={}).status_code == 404
+    assert h.client_a.post(f'/plan/{h.personal_b.id}/simulation', data={}).status_code == 404
+
+
+def test_simulation_input_keeps_exact_amount(db, household_clean, frozen_today):
+    from app.services import simulation_service as sim
+    h = household_clean
+    _j6_setup(db, h, salary_b=None)
+    _select(h.client_a, h.common)
+    sim.save_forecast(h.user_a, h.user_b.id, 12345.67)
+    sim.save_forecast(h.user_a, h.user_a.id, 3000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'value="12345.67"' in html and 'value="3000"' in html
+    h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={
+        f'salary_{h.user_a.id}': '3000', f'salary_{h.user_b.id}': '12345.67'})
+    assert sim.forecasts(h.user_a)[h.user_b.id] == 12345.67

@@ -1,0 +1,14 @@
+{% if alerts %}
+<div id="alert-banners" class="mb-3">
+  {% for alert in alerts %}
+  <div class="alert alert-{{ 'danger' if alert.type == 'overspending' else 'success' }} alert-dismissible fade show" role="alert">
+    {% if alert.type == 'overspending' %}
+      ⚠️ <strong>{{ alert.category.name }}</strong> — dépassement du rythme budgétaire ({{ (alert.ratio * 100)|round(0)|int }}% du budget journalier idéal consommé)
+    {% else %}
+      ✅ <strong>{{ alert.category.name }}</strong> — bien en avance sur le budget ({{ (alert.ratio * 100)|round(0)|int }}% consommé)
+    {% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Modifier une dépense — Tout Compte Fait{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <a href="{{ url_for('history.index') }}" class="btn btn-sm btn-outline-secondary">←</a>
+        <strong>Modifier la dépense</strong>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.amount.label(class="form-label") }}
+            <div class="amount-input-wrap">
+              <span class="amount-prefix">€</span>
+              {{ form.amount(class="form-control amount-field", step="0.01") }}
+            </div>
+            {% for e in form.amount.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.category_id.label(class="form-label") }}
+            {{ form.category_id(class="form-select") }}
+            {% for e in form.category_id.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.date.label(class="form-label") }}
+            {{ form.date(class="form-control") }}
+            {% for e in form.date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.label.label(class="form-label") }}
+            {{ form.label(class="form-control", placeholder="Monoprix…") }}
+            {% for e in form.label.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+
+          <button type="submit" class="btn btn-gradient w-100">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

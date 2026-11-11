@@ -1,0 +1,16 @@
+{% set fixed_auto = cat_data | selectattr('type', 'equalto', 'fixed_auto') | list %}
+{% set fixed_amount = cat_data | selectattr('type', 'equalto', 'fixed_amount') | list %}
+{% set dynamic = cat_data | selectattr('type', 'equalto', 'dynamic') | list %}
+
+{% for section_title, section_icon, section_items in [
+    ('Charges fixes', '🔒', fixed_auto),
+    ('Enveloppes fixes', '📌', fixed_amount),
+    ('Dynamiques', '📈', dynamic)
+] %}
+{% if section_items %}
+<div class="cat-section-title">{{ section_icon }} {{ section_title }}</div>
+{% for item in section_items %}
+  {% include 'dashboard/_category_card.html' %}
+{% endfor %}
+{% endif %}
+{% endfor %}

@@ -1,0 +1,27 @@
+<form method="post" action="{{ url_for('accounts.edit', account_id=account.id) if account is defined and account else url_for('accounts.index') }}">
+  {% if account is defined and account and pots is defined %}
+  {{ form.csrf_token }}
+  {% else %}
+  {{ form.hidden_tag() }}
+  {% endif %}
+  <div class="row g-2">
+    <div class="col-md-3">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}{% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-3">{{ form.bank_name.label(class="form-label") }}{{ form.bank_name(class="form-control") }}{% for e in form.bank_name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-3">{{ form.account_number_hint.label(class="form-label") }}{{ form.account_number_hint(class="form-control") }}{% for e in form.account_number_hint.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-2">{{ form.overdraft_limit.label(class="form-label") }}{{ form.overdraft_limit(class="form-control", min="0", step="0.01") }}{% for e in form.overdraft_limit.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-1 d-flex align-items-end">
+      <button type="submit" class="btn btn-success">{% if account is defined and account %}Enregistrer{% else %}Ajouter{% endif %}</button>
+    </div>
+  </div>
+  {% if account is defined and account and pots is defined %}
+  <div class="row g-2 mt-1">
+    <div class="col-md-4">
+      <label class="form-label" for="pot_id">Pot</label>
+      <select name="pot_id" id="pot_id" class="form-select">
+        {% for p in pots %}<option value="{{ p.id }}" {{ 'selected' if p.id == account.pot_id else '' }}>{{ p.name }}</option>{% endfor %}
+      </select>
+      <div class="form-text">Les opérations encore à classer suivent le compte ; les autres restent dans leur pot.</div>
+    </div>
+  </div>
+  {% endif %}
+</form>

@@ -1,0 +1,46 @@
+{% set spent = item.metrics.spent %}
+{% set effective = item.metrics.effective %}
+{% if effective > 0 %}
+  {% set pct_raw = (spent / effective * 100) %}
+{% elif spent > 0 %}
+  {# spending on a 0 € envelope: show it as fully overspent #}
+  {% set pct_raw = 101 %}
+{% else %}
+  {% set pct_raw = 0 %}
+{% endif %}
+{% if pct_raw > 100 %}{% set pct = 100 %}{% else %}{% set pct = pct_raw %}{% endif %}
+{% if pct_raw > 100 %}{% set state = 'danger' %}{% elif pct_raw > 80 %}{% set state = 'warn' %}{% else %}{% set state = 'ok' %}{% endif %}
+{% set type_class = 'type-' + item.category.type | replace('_', '-') %}
+
+<div class="cat-card {{ type_class }}" id="cat-{{ item.category.id }}">
+  <div class="d-flex justify-content-between align-items-center">
+    {% set detail_url = url_for('dashboard.category_detail_view', cat_id=item.category.id, year=year, month=month) %}
+    <a href="#" class="cat-name text-reset text-decoration-none"
+       hx-get="{{ detail_url }}" hx-target="#detail-modal-body" hx-swap="innerHTML"
+       data-bs-toggle="modal" data-bs-target="#detailModal">{{ item.category.name }}</a>
+    <div class="d-flex align-items-center gap-2">
+      <span class="cat-amount {{ state }}">{{ spent|money }}€ / {{ effective|money }}€</span>
+      <button class="btn-adjust"
+              hx-get="{{ url_for('adjustments.form') }}"
+              hx-target="#adjustment-modal-body"
+              hx-swap="innerHTML"
+              data-bs-toggle="modal" data-bs-target="#adjustmentModal"
+              title="Réallouer">⇄</button>
+      <button class="btn-adjust"
+              hx-get="{{ detail_url }}"
+              hx-target="#detail-modal-body"
+              hx-swap="innerHTML"
+              data-bs-toggle="modal" data-bs-target="#detailModal"
+              title="Détail des opérations">🔍</button>
+    </div>
+  </div>
+  <div class="cat-progress">
+    <div class="cat-progress-bar {{ state }}" style="width: {{ pct }}%;"></div>
+  </div>
+  <div class="cat-meta">
+    <span>{{ spent|money }}€ dépensé · {{ item.metrics.remaining_daily|money }}€/j restant</span>
+    <span class="cat-balance {{ 'ok' if item.metrics.balance >= 0 else 'danger' }}">
+      {{ item.metrics.balance|money }}€
+    </span>
+  </div>
+</div>

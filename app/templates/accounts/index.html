@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Comptes — Tout Compte Fait{% endblock %}
+{% macro account_rows(items) %}
+{% for a in items %}
+<tr style="vertical-align:middle;">
+  <td class="ps-3 fw-semibold" style="color:var(--text-main);">{{ a.name }}</td>
+  <td>{{ a.bank_name }}</td>
+  <td style="color:var(--text-secondary); font-size:.85rem;">{{ a.account_number_hint or '—' }}</td>
+  <td>{{ a.overdraft_limit|money }} €</td>
+  <td>
+    <a href="{{ url_for('accounts.edit', account_id=a.id) }}" class="btn btn-xs btn-outline-primary me-1" title="Modifier">✏️</a>
+    <form method="post" action="{{ url_for('accounts.archive', account_id=a.id) }}" class="d-inline">
+      {{ form.hidden_tag() }}
+      <button type="submit" class="btn btn-xs btn-outline-secondary" title="{{ 'Désarchiver' if a.archived else 'Archiver' }}">{{ '♻️' if a.archived else '📦' }}</button>
+    </form>
+    <form method="post" action="{{ url_for('accounts.delete', account_id=a.id) }}" class="d-inline">
+      {{ form.hidden_tag() }}
+      <button type="submit" class="btn btn-xs btn-outline-danger" title="Supprimer">🗑️</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}
+{% endmacro %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0">🏦 Comptes — {{ current_pot.name }}</h5>
+  <a href="{{ url_for('operations.import_csv') }}" class="btn btn-sm btn-outline-secondary">Importer un relevé</a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body p-0">
+    {% if active %}
+    <table class="table table-sm table-hover mb-0">
+      <thead>
+        <tr style="font-size:.75rem; color: var(--text-muted); text-transform:uppercase; letter-spacing:.05em;">
+          <th class="ps-3">Nom</th><th>Banque</th><th>Repère</th><th>Découvert</th><th></th>
+        </tr>
+      </thead>
+      <tbody>{{ account_rows(active) }}</tbody>
+    </table>
+    {% else %}
+    <p class="p-3 mb-0 text-secondary">Aucun compte dans ce pot.</p>
+    {% endif %}
+  </div>
+</div>
+
+<h6 class="fw-bold mt-4 mb-3">Ajouter un compte</h6>
+<div class="card mb-4"><div class="card-body">
+  {% include 'accounts/_form.html' %}
+</div></div>
+
+{% if archived %}
+<details>
+  <summary class="fw-semibold mb-2">Comptes archivés ({{ archived|length }})</summary>
+  <div class="card"><div class="card-body p-0">
+    <table class="table table-sm mb-0"><tbody>{{ account_rows(archived) }}</tbody></table>
+  </div></div>
+</details>
+{% endif %}
+{% endblock %}

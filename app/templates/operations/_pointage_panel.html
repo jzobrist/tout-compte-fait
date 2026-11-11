@@ -1,0 +1,44 @@
+{% set tab_defs = [('a-classer', 'À classer'), ('en-attente', 'En attente'), ('rapproches', 'Rapprochés')] %}
+<div id="pointage-panel">
+  <ul class="nav nav-pills pointage-tabs mb-3 flex-nowrap">
+    {% for key, title in tab_defs %}
+    <li class="nav-item flex-fill text-center">
+      <a class="nav-link {{ 'active' if tab == key else '' }}" href="{{ url_for('operations.pointage', tab=key) }}"
+         hx-get="{{ url_for('operations.pointage', tab=key) }}" hx-push-url="true">
+        {{ title }} <span class="badge bg-secondary" data-count="{{ key }}">{{ counts[key] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if not rows %}
+  <div class="card"><div class="card-body text-center py-5 text-secondary">
+    <div style="font-size:2.5rem">{{ '✅' if tab == 'a-classer' else '—' }}</div>
+    <p class="mt-2 mb-0">
+      {% if tab == 'a-classer' %}Rien à classer.{% elif tab == 'en-attente' %}Aucune dépense en attente de débit.{% else %}Aucun rapprochement ces 30 derniers jours.{% endif %}
+    </p>
+  </div></div>
+  {% endif %}
+
+  {% if tab == 'a-classer' and pending_bank %}
+  <details class="card mb-3" id="pending-bank">
+    <summary class="card-body py-2">En cours à la banque <span class="badge bg-secondary">{{ pending_bank|length }}</span></summary>
+    <ul class="list-group list-group-flush">
+      {% for pm in pending_bank %}
+      <li class="list-group-item d-flex justify-content-between small">
+        <span>{{ pm.date.strftime('%d/%m') }} — {{ pm.label }}</span>
+        <span>{{ '-' if pm.direction == 'debit' else '+' }}{{ pm.amount|money }} €</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% for row in rows %}
+    {% if tab == 'en-attente' %}
+      {% include 'operations/_pointage_pending_row.html' %}
+    {% else %}
+      {% include 'operations/_pointage_row.html' %}
+    {% endif %}
+  {% endfor %}
+</div>

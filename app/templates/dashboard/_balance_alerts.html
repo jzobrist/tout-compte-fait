@@ -1,0 +1,9 @@
+{% if balance_alerts %}
+<div class="mb-3">
+  {% if 'free_overdraft' in balance_alerts %}
+  <div class="alert alert-danger mb-2" role="alert">🚨 <strong>Découvert autorisé dépassé</strong> — des frais bancaires sont en vue. <a href="{{ url_for('plan.index') }}">Plan du mois</a></div>
+  {% elif 'free_negative' in balance_alerts %}
+  <div class="alert alert-warning mb-2" role="alert">⚠️ <strong>Argent libre négatif</strong> — le budget du mois ne tient plus. <a href="{{ url_for('plan.index') }}">Plan du mois</a></div>
+  {% endif %}
+</div>
+{% endif %}

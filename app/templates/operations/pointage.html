@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Pointage — Tout Compte Fait{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Pointage</h2>
+  <div class="d-flex gap-2">
+    {% if bank_sync_available %}
+    <form method="post" action="{{ url_for('bank.sync') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="pointage">
+      <button type="submit" class="btn btn-outline-secondary btn-sm" id="sync-now">🔄 Synchroniser maintenant</button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('operations.import_csv') }}" class="btn btn-gradient btn-sm">⬆️ Importer un relevé</a>
+  </div>
+</div>
+
+<div hx-target="#pointage-panel" hx-swap="outerHTML"
+     hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+{{ panel|safe }}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.addEventListener('htmx:responseError', function () {
+  alert("Action impossible : vérifiez le choix (catégorie requise ?).");
+});
+</script>
+{% endblock %}

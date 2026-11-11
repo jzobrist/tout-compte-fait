@@ -1,0 +1,8 @@
+<div id="refloat-summary"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if has_deficit %}
+  <div class="small">Découvert à résorber : <strong>{{ plan.deficit|money }} €</strong> · soit {{ share|money }} € ce mois-ci{% if pot.kind == 'common' %} dont {{ envelope_part|money }} € sur les enveloppes{% endif %}</div>
+  {% if report.unabsorbed > 0.005 %}
+  <div class="small text-danger">{{ report.unabsorbed|money }} € non résorbés ce mois (planchers) → reportés</div>
+  {% endif %}
+  {% endif %}
+</div>

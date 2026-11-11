@@ -1,0 +1,19 @@
+{# Simulation of the next plan: only the viewer's typed salaries and the resulting contributions. #}
+<div id="simulation">
+{% if s %}
+{% set r = s.result %}
+<hr>
+<h6>Simuler le plan de {{ r.label }}</h6>
+<form hx-post="{{ url_for('plan.simulation', pot_id=pot.id) }}" hx-trigger="input changed delay:500ms"
+      hx-target="#simulation-result" hx-swap="innerHTML">
+  {% for u in s.members %}
+  <div class="mb-1">
+    <label class="form-label small mb-0" for="salary-{{ u.id }}">Salaire de {{ u.display_name }}</label>
+    <input type="number" class="form-control form-control-sm" id="salary-{{ u.id }}" name="salary_{{ u.id }}"
+           min="0" step="0.01" inputmode="decimal" value="{% if u.id in s.forecasts %}{% set v = s.forecasts[u.id] %}{{ v|int if v == v|int else '%.2f'|format(v) }}{% endif %}">
+  </div>
+  {% endfor %}
+</form>
+<div id="simulation-result">{% include 'plan/_simulation_result.html' %}</div>
+{% endif %}
+</div>

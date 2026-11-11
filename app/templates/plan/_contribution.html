@@ -1,0 +1,32 @@
+{% set c = contribution %}
+{% if c %}
+<div id="contribution" class="card mb-3"><div class="card-body">
+  {% if c.link %}
+  <a href="{{ url_for('plan.index', year=c.link[0], month=c.link[1]) }}">Plan de {{ c.link_label }}</a>
+  {% elif not c.plan %}
+  <h6>Virements vers le commun — {{ c.label }}</h6>
+  <ul class="list-unstyled small mb-2">
+    {% for u in c.waiting %}
+    <li class="text-secondary">{% if u.id == current_user.id %}en attente de votre salaire{% else %}en attente du salaire de {{ u.display_name }}{% endif %}</li>
+    {% endfor %}
+    {% if c.waiting_sync %}<li class="text-secondary">en attente d'une synchro bancaire</li>{% endif %}
+  </ul>
+  {% if c.can_force %}
+  <button class="btn btn-sm btn-outline-secondary" hx-post="{{ url_for('plan.contribution_force', pot_id=pot.id) }}"
+          hx-target="#contribution" hx-swap="outerHTML">Calculer quand même</button>
+  {% endif %}
+  {% else %}
+  <h6>Virements vers le commun — {{ c.label }}</h6>
+  {% with oob=false %}{% include 'plan/_contribution_figures.html' %}{% endwith %}
+  {% for cat, amount, max in c.allocations %}
+  <label class="form-label small mb-0 mt-2">{{ cat.name }} : <strong id="alloc-label-{{ cat.id }}">{{ amount|round|int }}</strong> € du surplus</label>
+  <input type="range" class="form-range" name="amount" aria-label="Affecter à {{ cat.name }}"
+         min="0" max="{{ max }}" step="1" value="{{ amount }}"
+         oninput="document.getElementById('alloc-label-{{ cat.id }}').textContent=this.value"
+         hx-post="{{ url_for('plan.allocation', pot_id=pot.id, category_id=cat.id) }}"
+         hx-trigger="input changed delay:400ms" hx-swap="none">
+  {% endfor %}
+  {% endif %}
+  {% with s=c.simulation %}{% include 'plan/_simulation.html' %}{% endwith %}
+</div></div>
+{% endif %}

@@ -1,0 +1,17 @@
+venv/
+*.db
+.env
+__pycache__/
+*.pyc
+*.pyo
+.superpowers/
+instance/
+.claude/
+.pytest_cache/
+
+# Exports bancaires réels — ne jamais versionner
+/*.csv
+
+# Notes de conception internes (contexte personnel) — gardées en local, jamais publiées
+docs/
+*.pem

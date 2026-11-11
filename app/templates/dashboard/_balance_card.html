@@ -1,0 +1,31 @@
+{% if fm %}
+{% set b = fm.balance %}
+<a href="{{ url_for('plan.index') }}" class="text-decoration-none text-reset">
+<div class="row g-2 mb-3">
+  <div class="col-6">
+    <div class="kpi-card">
+      <div class="kpi-label">Solde réel</div>
+      {% if b.known %}
+      <div class="kpi-value" style="color: {% if b.value >= 0 %}var(--ok){% else %}var(--danger){% endif %};">{{ b.value|money }} €</div>
+      <div class="small text-secondary">comptabilisé {{ b.booked|money }} €</div>
+      {% else %}
+      <div class="kpi-value text-secondary">—</div>
+      {% for name in b.missing %}<div class="small text-secondary">solde inconnu — compte {{ name }} non synchronisé</div>{% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-6">
+    <div class="kpi-card">
+      <div class="kpi-label">Argent vraiment libre</div>
+      {% if fm.value is not none %}
+      <div class="kpi-value" style="color: {% if fm.value >= 0 %}var(--ok){% else %}var(--danger){% endif %};">{{ fm.value|money }} €</div>
+      {% else %}
+      <div class="kpi-value text-secondary">—</div>
+      {% endif %}
+      {% if not fm.income_received %}<div class="small text-warning">revenus du mois pas encore reçus</div>{% endif %}
+      <div class="small">Plan du mois →</div>
+    </div>
+  </div>
+</div>
+</a>
+{% endif %}

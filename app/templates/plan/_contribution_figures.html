@@ -1,0 +1,36 @@
+{# Figures of the J6 plan (no input inside: safe to swap out-of-band while a slider is dragged). #}
+{% set c = contribution %}
+<div id="contribution-need"{% if oob %} hx-swap-oob="true"{% endif %} class="small">
+  Besoin commun : <strong>{{ c.need.total|money }} €</strong>
+  {% if c.position < 0 %}· Déficit du commun : {{ (-c.position)|money }} €
+  {% elif c.position > 0 %}· Surplus du commun : {{ c.position|money }} €{% endif %}
+</div>
+<div id="contribution-members"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if c.plan.status == 'validated' %}<div class="small fw-bold text-success">Plan validé</div>{% endif %}
+  {% if c.plan.validated_negative %}
+  <div class="alert alert-warning small my-2">Plan validé avec un reste à vivre négatif</div>
+  {% endif %}
+  <ul class="list-unstyled mb-1">
+    {% for m in c.members %}
+    <li>{{ m.user.display_name }} : <strong>{{ m.amount|money }} €</strong> — reçu {{ m.received|money }} € — reste à faire {{ m.due|money }} €
+      · <span class="small {{ 'text-success' if m.validated else 'text-secondary' }}">{{ 'validé' if m.validated else 'en attente de validation' }}</span></li>
+    {% endfor %}
+  </ul>
+  {% if c.adjusted %}<p class="small text-secondary mb-0">Montants ajustés par solidarité</p>{% endif %}
+  {% if c.shortfall > 0.005 %}
+  <div class="small text-danger">il manque {{ c.shortfall|money }} € pour que le reste à vivre soit positif</div>
+  {% endif %}
+</div>
+<div id="contribution-actions"{% if oob %} hx-swap-oob="true"{% endif %} class="mt-2">
+  {% if c.plan.status == 'validated' %}
+    {% if c.can_reopen %}
+    <button class="btn btn-sm btn-outline-secondary" hx-post="{{ url_for('plan.contribution_reopen', pot_id=pot.id) }}"
+            hx-target="#contribution" hx-swap="outerHTML">Rouvrir le plan</button>
+    {% endif %}
+  {% elif not c.me_validated %}
+  <button class="btn btn-sm btn-primary" hx-post="{{ url_for('plan.contribution_validate', pot_id=pot.id) }}"
+          hx-vals='{{ {"snapshot": c.snapshot}|tojson }}'
+          hx-on::before-swap="if (event.detail.xhr.status === 409) event.detail.shouldSwap = true"
+          hx-target="#contribution" hx-swap="outerHTML">Valider le plan</button>
+  {% endif %}
+</div>

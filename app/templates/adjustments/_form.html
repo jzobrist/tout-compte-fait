@@ -1,0 +1,19 @@
+<form hx-post="{{ url_for('adjustments.add') }}"
+      hx-target="body"
+      hx-swap="none"
+      hx-on::after-request="bootstrap.Modal.getInstance(document.getElementById('adjustmentModal')).hide(); window.location.reload();">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.from_category_id.label(class="form-label") }}
+    {{ form.from_category_id(class="form-select") }}
+  </div>
+  <div class="mb-3">
+    {{ form.to_category_id.label(class="form-label") }}
+    {{ form.to_category_id(class="form-select") }}
+  </div>
+  <div class="mb-3">
+    {{ form.amount.label(class="form-label") }}
+    {{ form.amount(class="form-control", placeholder="50.00") }}
+  </div>
+  <button type="submit" class="btn btn-primary w-100">Réallouer</button>
+</form>

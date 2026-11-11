@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}Ma banque — Tout Compte Fait{% endblock %}
+{% block content %}
+<h5 class="fw-bold mb-3">🏦 Ma banque</h5>
+
+{% if conn is none %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Configuration Enable Banking</strong></div>
+  <div class="card-body">
+    <p class="small text-secondary">
+      Créez votre application sur Enable Banking, déclarez l'adresse de retour
+      <code>{{ redirect_url }}</code>, puis renseignez ci-dessous l'identifiant de l'application et sa clé privée (.pem).
+      La clé est chiffrée et n'est jamais réaffichée.
+    </p>
+    {% include 'bank/_setup_form.html' %}
+  </div>
+</div>
+{% else %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Connexion — {{ conn.aspsp_name }}</strong>
+    <span class="badge bg-{{ {'active': 'success', 'setup': 'secondary', 'expired': 'warning', 'error': 'danger'}.get(conn.status, 'secondary') }}">
+      {{ {'active': 'Active', 'setup': 'À connecter', 'expired': 'Expirée', 'error': 'En erreur'}.get(conn.status, conn.status) }}
+    </span>
+  </div>
+  <div class="card-body">
+    <dl class="row small mb-3">
+      <dt class="col-sm-4">Application</dt><dd class="col-sm-8"><code>{{ conn.app_id }}</code></dd>
+      <dt class="col-sm-4">Accès valable jusqu'au</dt>
+      <dd class="col-sm-8">{{ conn.valid_until.strftime('%d/%m/%Y') if conn.valid_until else '—' }}</dd>
+      <dt class="col-sm-4">Dernière synchronisation</dt>
+      <dd class="col-sm-8">{{ conn.last_sync_at.strftime('%d/%m/%Y %H:%M') if conn.last_sync_at else '—' }}</dd>
+      {% if conn.last_error %}
+      <dt class="col-sm-4">Dernière erreur</dt><dd class="col-sm-8 text-danger">{{ conn.last_error }}</dd>
+      {% endif %}
+    </dl>
+    <div class="d-flex gap-2 flex-wrap">
+      <form method="post" action="{{ url_for('bank.connect') }}">
+        {{ connect_form.hidden_tag() }}
+        <button type="submit" class="btn btn-gradient btn-sm">{{ 'Reconnecter' if conn.status in ('active', 'expired', 'error') else 'Connecter ma banque' }}</button>
+      </form>
+      {% if conn.status in ('active', 'error') %}
+      <form method="post" action="{{ url_for('bank.sync') }}">
+        {{ connect_form.hidden_tag() }}
+        <button type="submit" class="btn btn-outline-primary btn-sm">Synchroniser maintenant</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('bank.delete') }}" onsubmit="return confirm('Supprimer la connexion bancaire ? Vos comptes et opérations sont conservés.');">
+        {{ connect_form.hidden_tag() }}
+        <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer la connexion</button>
+      </form>
+    </div>
+    <hr>
+    <p class="small text-secondary mb-2">
+      Si le retour de la banque n'aboutit pas automatiquement, collez ici l'adresse de la page où vous avez atterri.
+    </p>
+    <form method="post" action="{{ url_for('bank.callback_paste') }}" class="input-group input-group-sm">
+      {{ paste_form.hidden_tag() }}
+      <input type="text" name="return_url" class="form-control" placeholder="https://…/bank/callback?state=…&code=…" required>
+      <button type="submit" class="btn btn-outline-secondary">Valider</button>
+    </form>
+  </div>
+</div>
+
+{% if editing %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Modifier les identifiants</strong></div>
+  <div class="card-body">
+    <p class="small text-secondary">Remplacer la clé ou l'application réinitialise la connexion (à reconnecter ensuite).</p>
+    {% include 'bank/_setup_form.html' %}
+  </div>
+</div>
+{% else %}
+<p class="small mb-3"><a href="{{ url_for('bank.index', edit=1) }}">Modifier les identifiants</a></p>
+{% endif %}
+
+{% if links %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Comptes</strong></div>
+  <ul class="list-group list-group-flush">
+    {% for link, account in links %}
+    <li class="list-group-item">
+      <div class="fw-semibold">{{ link.label or 'Compte' }}
+        <span class="text-secondary small">…{{ link.iban_last4 or '????' }}</span></div>
+      {% if link.orphaned %}
+        <span class="badge bg-warning text-dark">Plus proposé par la banque</span>
+      {% elif link.ignored %}
+        <span class="badge bg-secondary">Ignoré</span>
+      {% elif link.bank_account_id %}
+        <span class="badge bg-success">Rattaché</span>
+        {% if account %}
+          <span class="small">{{ account.name }} — {{ account.pot.name }}</span>
+          {% if not link.is_primary %}<span class="small text-secondary">(source secondaire)</span>{% endif %}
+        {% endif %}
+      {% else %}
+        <form method="post" action="{{ url_for('bank.map_link', link_id=link.id) }}" class="row g-2 mt-1">
+          {{ map_form.csrf_token }}
+          <div class="col-12 col-md-4">
+            <input type="text" name="name" class="form-control form-control-sm" value="{{ link.label or '' }}" maxlength="120" placeholder="Nom du compte">
+          </div>
+          <div class="col-12 col-md-4">
+            <select name="pot_id" class="form-select form-select-sm">
+              <option value="" disabled selected>— choisir un pot —</option>
+              {% for p in pots %}<option value="{{ p.id }}">Créer dans {{ p.name }}</option>{% endfor %}
+            </select>
+          </div>
+          {% if attachable %}
+          <div class="col-12 col-md-4">
+            <select name="account_id" class="form-select form-select-sm">
+              <option value="">Rattacher à un compte existant…</option>
+              {% for a in attachable %}<option value="{{ a.id }}">{{ a.name }} — {{ a.pot.name }}</option>{% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-6 col-md-2"><button type="submit" class="btn btn-sm btn-gradient w-100">Rattacher</button></div>
+          <div class="col-6 col-md-2">
+            <button type="submit" name="ignore" value="1" class="btn btn-sm btn-outline-secondary w-100">Ignorer</button>
+          </div>
+        </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

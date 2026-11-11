@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}Modifier {{ cat.name }} — Tout Compte Fait{% endblock %}
+{% block content %}
+<h5 class="fw-bold mb-3">Modifier la catégorie</h5>
+<div class="card"><div class="card-body">
+  {% include 'categories/_form.html' %}
+</div></div>
+<a href="{{ url_for('categories.index') }}" class="btn btn-outline-secondary btn-sm mt-3">Retour</a>
+{% endblock %}

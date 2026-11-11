@@ -1,0 +1,62 @@
+<form method="post" id="category-form"
+      action="{{ url_for('categories.edit', cat_id=cat.id) if cat else url_for('categories.index') }}"
+      {% if impacts is defined %}data-impacts='{{ impacts | tojson }}'{% endif %}>
+  {{ form.hidden_tag() }}
+  {% if locked is defined and locked %}<div class="alert alert-secondary py-2">Cette catégorie est réservée au virement vers le commun : seuls ses réglages peuvent changer.</div>{% endif %}
+  <div class="row g-2">
+    <div class="col-md-4">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div>
+    <div class="col-md-3">{{ form.type.label(class="form-label") }}{{ form.type(class="form-select", id="cat-type") }}</div>
+    <div class="col-md-2 d-flex align-items-end">
+      <div class="form-check">{{ form.common(class="form-check-input") }}{{ form.common.label(class="form-check-label") }}</div>
+    </div>
+    <div class="col-md-3">{{ form.personal.label(class="form-label") }}{{ form.personal(class="form-select") }}</div>
+  </div>
+  {% for kind, label, sform in settings_forms %}
+  <div class="cat-section-title mt-3">{{ label }}</div>
+  <div class="row g-2">
+    <div class="col-md-3 f-fixed">{{ sform.amount.label(class="form-label") }}{{ sform.amount(class="form-control") }}</div>
+    <div class="col-md-3 f-dyn">{{ sform.percentage.label(class="form-label") }}{{ sform.percentage(class="form-control") }}</div>
+    <div class="col-md-3 f-dyn">{{ sform.min_amount.label(class="form-label") }}{{ sform.min_amount(class="form-control") }}</div>
+    <div class="col-md-3 f-dyn">{{ sform.max_amount.label(class="form-label") }}{{ sform.max_amount(class="form-control") }}</div>
+    <div class="col-md-4 d-flex align-items-end">
+      <div class="form-check">{{ sform.carry_over(class="form-check-input") }}{{ sform.carry_over.label(class="form-check-label") }}</div>
+    </div>
+    {% if kind == 'personal' %}
+    <div class="col-md-5 d-flex align-items-end f-fixed">
+      <div class="form-check">{{ sform.constrained(class="form-check-input") }}{{ sform.constrained.label(class="form-check-label") }}</div>
+    </div>
+    {% else %}
+    <div class="col-md-5 d-flex align-items-end">
+      <div class="form-check">{{ sform.provision(class="form-check-input") }}{{ sform.provision.label(class="form-check-label") }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="mt-3">
+    <button type="submit" class="btn btn-success">{% if cat %}Enregistrer{% else %}Ajouter{% endif %}</button>
+  </div>
+</form>
+<script>
+(function() {
+  const typeSel = document.getElementById('cat-type');
+  function toggle() {
+    const fixed = typeSel.value === 'fixed_auto' || typeSel.value === 'fixed_amount';
+    document.querySelectorAll('#category-form .f-fixed').forEach(function(e) { e.style.display = fixed ? '' : 'none'; });
+    document.querySelectorAll('#category-form .f-dyn').forEach(function(e) { e.style.display = fixed ? 'none' : ''; });
+  }
+  typeSel.addEventListener('change', toggle);
+  toggle();
+  const formEl = document.getElementById('category-form');
+  if (formEl.dataset.impacts) {
+    const impacts = JSON.parse(formEl.dataset.impacts);
+    formEl.addEventListener('submit', function(e) {
+      const key = (formEl.elements['common'].checked ? 1 : 0) + '|' + formEl.elements['personal'].value;
+      const imp = impacts[key];
+      if (!imp || (!imp.to_reclassify && !imp.pending_deleted)) return;
+      let msg = imp.to_reclassify + ' opération' + (imp.to_reclassify > 1 ? 's' : '') + ' seront à reclasser';
+      if (imp.pending_deleted) msg += ' et ' + imp.pending_deleted + ' saisie' + (imp.pending_deleted > 1 ? 's' : '') + ' en attente supprimée' + (imp.pending_deleted > 1 ? 's' : '');
+      if (!confirm(msg + '. Continuer ?')) e.preventDefault();
+    });
+  }
+})();
+</script>

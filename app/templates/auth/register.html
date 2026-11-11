@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Créer un foyer — Tout Compte Fait{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <div class="auth-title">🏠 Créer un foyer</div>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.household_name.label(class="form-label") }}
+      {{ form.household_name(class="form-control", placeholder="Ex: Famille Dupont") }}
+    </div>
+    <div class="mb-3">
+      {{ form.display_name.label(class="form-label") }}
+      {{ form.display_name(class="form-control", placeholder="Votre prénom") }}
+    </div>
+    <div class="mb-3">
+      {{ form.email.label(class="form-label") }}
+      {{ form.email(class="form-control", placeholder="vous@example.com") }}
+    </div>
+    <div class="mb-3">
+      {{ form.password.label(class="form-label") }}
+      {{ form.password(class="form-control") }}
+    </div>
+    <button type="submit" class="btn btn-gradient w-100 py-2 mt-1">Créer le foyer</button>
+  </form>
+  <p class="mt-3 text-center" style="font-size:.9rem; color: var(--text-secondary);">
+    Déjà un compte ? <a href="{{ url_for('auth.login') }}">Se connecter</a>
+  </p>
+</div>
+{% endblock %}

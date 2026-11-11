@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Tout Compte Fait{% endblock %}</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <script>
+      (function() {
+        if (localStorage.getItem('theme') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+</head>
+<body>
+{% macro pot_switcher() %}
+    <div class="pot-switcher d-flex align-items-center gap-1">
+        <span class="fw-semibold" id="current-pot-name">{{ current_pot.name }}</span>
+        {% for p in accessible_pots %}
+        {% if p.id == current_pot.id %}
+        <span class="btn btn-sm btn-secondary disabled">{{ 'Commun' if p.kind == 'common' else 'Mon perso' }}</span>
+        {% else %}
+        <form method="post" action="{{ url_for('pots.select', pot_id=p.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'Commun' if p.kind == 'common' else 'Mon perso' }}</button>
+        </form>
+        {% endif %}
+        {% endfor %}
+    </div>
+{% endmacro %}
+    {% if current_user.is_authenticated %}
+    <!-- Desktop navbar (hidden on mobile via CSS) -->
+    <nav class="navbar navbar-expand-lg main-navbar">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}">💰 Tout Compte Fait</a>
+            {{ pot_switcher() }}
+            <div class="navbar-nav ms-auto d-flex flex-row gap-3 align-items-center">
+                <a class="nav-link" href="{{ url_for('plan.index') }}">Plan du mois</a>
+                <a class="nav-link" href="{{ url_for('incomes.index') }}">Revenus</a>
+                <a class="nav-link" href="{{ url_for('accounts.index') }}">Comptes</a>
+                <a class="nav-link" href="{{ url_for('history.index') }}">Historique</a>
+                <a class="nav-link" href="{{ url_for('operations.pointage') }}">Pointage</a>
+                <a class="nav-link" href="{{ url_for('settings.index') }}">⚙️ Paramètres</a>
+                <a class="nav-link" href="{{ url_for('auth.logout') }}">Déconnexion</a>
+                <button class="btn btn-sm btn-outline-secondary ms-2" id="theme-toggle" title="Changer le thème">🌙</button>
+            </div>
+        </div>
+    </nav>
+    <!-- Mobile pot switcher (navbar collapses below 992px) -->
+    <div class="d-lg-none container mt-2">{{ pot_switcher() }}</div>
+    {% endif %}
+
+    <div class="container mt-4 mb-4">
+        {% if current_user.is_authenticated and bank_banner %}
+        <div class="alert alert-warning" id="bank-banner">
+            {% if bank_banner == 'expiring' %}Votre accès bancaire expire bientôt.
+            {% elif bank_banner == 'expired' %}Votre accès bancaire a expiré.
+            {% else %}La synchronisation bancaire est en erreur.{% endif %}
+            <a href="{{ url_for('bank.index') }}" class="alert-link">Ma banque</a>
+        </div>
+        {% endif %}
+        {% if current_user.is_authenticated and category_notices is defined %}
+        {% for notice in category_notices() %}
+        <div class="alert alert-info alert-dismissible fade show category-notice" role="alert">
+            {{ notice }}
+            <a href="{{ url_for('operations.pointage') }}" class="alert-link">Aller au pointage</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+
+    {% if current_user.is_authenticated %}
+    <!-- Mobile bottom navigation -->
+    <nav class="bottom-nav">
+        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('dashboard') else '' }}"
+           href="{{ url_for('dashboard.index') }}">
+            <span class="nav-icon">📊</span>
+            <span>Dashboard</span>
+        </a>
+        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('history') else '' }}"
+           href="{{ url_for('history.index') }}">
+            <span class="nav-icon">📅</span>
+            <span>Historique</span>
+        </a>
+        <div class="bottom-nav-fab">
+            <button hx-get="{{ url_for('operations.form') }}"
+                    hx-target="#operation-modal-body"
+                    hx-swap="innerHTML"
+                    data-bs-toggle="modal"
+                    data-bs-target="#operationModal"
+                    title="Pointer une dépense">+</button>
+        </div>
+        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('accounts') else '' }}"
+           href="{{ url_for('accounts.index') }}">
+            <span class="nav-icon">🏦</span>
+            <span>Comptes</span>
+        </a>
+        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('operations') and request.endpoint == 'operations.pointage' else '' }}"
+           href="{{ url_for('operations.pointage') }}">
+            <span class="nav-icon">✅</span>
+            <span>Pointage</span>
+        </a>
+        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings') else '' }}"
+           href="{{ url_for('settings.index') }}">
+            <span class="nav-icon">⚙️</span>
+            <span>Paramètres</span>
+        </a>
+    </nav>
+
+    <!-- Operation modal (bottom sheet on mobile) -->
+    <div class="modal fade" id="operationModal" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+          <div style="width:36px;height:4px;background:var(--border);border-radius:99px;margin:0 auto;" class="d-md-none"></div>
+          <h5 class="modal-title d-none d-md-block">Pointer une dépense</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="operation-modal-body">Chargement...</div>
+      </div></div>
+    </div>
+
+    <!-- Adjustment modal -->
+    <div class="modal fade" id="adjustmentModal" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Réallocation budgétaire</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="adjustment-modal-body">Chargement...</div>
+      </div></div>
+    </div>
+    {% endif %}
+
+    <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+    <script>
+      // Dark mode toggle (desktop button in navbar)
+      const html = document.documentElement;
+      function applyThemeIcon() {
+        const t = document.getElementById('theme-toggle');
+        if (t) t.textContent = html.classList.contains('dark') ? '☀️' : '🌙';
+      }
+      applyThemeIcon();
+      const toggle = document.getElementById('theme-toggle');
+      if (toggle) toggle.addEventListener('click', function() {
+        html.classList.toggle('dark');
+        localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+        applyThemeIcon();
+      });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

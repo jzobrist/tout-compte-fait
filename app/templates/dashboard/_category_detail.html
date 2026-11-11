@@ -1,0 +1,92 @@
+{% set cat = detail.category %}
+<div id="detail-modal-content">
+  <div class="modal-header">
+    <h5 class="modal-title">{{ category_label(cat) }} <small class="text-secondary fw-normal">· {{ month_name }} {{ year }}</small></h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  </div>
+  <div class="modal-body">
+    {% if not detail.rows %}
+    <p class="text-secondary mb-0">Aucune opération comptée ce mois-ci.</p>
+    {% endif %}
+    {% for row in detail.rows %}
+    {% set op = row.op %}
+    {% set credit = op.direction == 'credit' %}
+    {% set acc = account_label(op) %}
+    <article class="card mb-2" id="detail-op-{{ op.id }}">
+      <div class="card-body p-2">
+        <div class="d-flex justify-content-between gap-2">
+          <div class="min-w-0">
+            <div class="fw-semibold text-truncate">{{ op.label or op.bank_label or '—' }}</div>
+            <div class="small text-secondary">
+              {{ (op.bank_date or op.date).strftime('%d/%m/%Y') }}{% if acc %} · {{ acc }}{% endif %}
+              {% if credit %} · <span class="badge bg-success-subtle text-success-emphasis">remboursement</span>{% endif %}
+              {% if op.is_pending %} · <span class="badge bg-warning-subtle text-warning-emphasis">en attente</span>{% endif %}
+            </div>
+          </div>
+          <div class="fw-semibold text-nowrap {{ 'text-success' if credit else '' }}">{{ '+' if credit else '−' }}{{ op.amount|money }} €</div>
+        </div>
+
+        <details class="mt-1">
+          <summary class="small text-secondary" style="cursor:pointer">Reclasser</summary>
+          {% if row.bank %}
+          <form class="mt-2" hx-post="{{ url_for('operations.classify_op', op_id=op.id) }}"
+                hx-target="#detail-modal-content" hx-swap="outerHTML">
+            <input type="hidden" name="detail_cat" value="{{ cat.id }}">
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <select name="category_id" class="form-select form-select-sm mb-2" aria-label="Catégorie">
+              {% for title, cats in row.groups %}
+                {% if title %}<optgroup label="{{ title }}">{% endif %}
+                {% for c in cats %}<option value="{{ c.id }}" {{ 'selected' if c.id == op.category_id else '' }}>{{ category_label(c) }}</option>{% endfor %}
+                {% if title %}</optgroup>{% endif %}
+              {% endfor %}
+            </select>
+            <div class="d-flex flex-wrap gap-2">
+              {% if credit %}
+              <button class="btn btn-sm btn-primary" name="classification" value="refund">Remboursement</button>
+              {% if not row.restricted %}
+              <button class="btn btn-sm btn-outline-primary" name="classification" value="income">Revenu</button>
+              {% endif %}
+              {% else %}
+              <button class="btn btn-sm btn-primary" name="classification" value="category">Classer</button>
+              {% endif %}
+              {% if not row.restricted %}
+              <button class="btn btn-sm btn-outline-secondary" name="classification" value="internal">Virement interne</button>
+              <button class="btn btn-sm btn-outline-secondary" name="classification" value="off_budget">Hors budget</button>
+              {% endif %}
+            </div>
+          </form>
+          {% else %}
+          <form class="mt-2" hx-post="{{ url_for('operations.recategorize_op', op_id=op.id) }}"
+                hx-target="#detail-modal-content" hx-swap="outerHTML">
+            <input type="hidden" name="detail_cat" value="{{ cat.id }}">
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            <div class="d-flex flex-wrap gap-2">
+              <select name="category_id" class="form-select form-select-sm w-auto flex-grow-1" aria-label="Catégorie">
+                {% for title, cats in row.groups %}
+                  {% for c in cats %}<option value="{{ c.id }}" {{ 'selected' if c.id == op.category_id else '' }}>{{ category_label(c) }}</option>{% endfor %}
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm btn-primary">Changer</button>
+              <button type="button" class="btn btn-sm btn-outline-danger"
+                      hx-post="{{ url_for('operations.delete', op_id=op.id) }}"
+                      hx-vals='{"detail_cat": "{{ cat.id }}", "year": "{{ year }}", "month": "{{ month }}"}'
+                      hx-target="#detail-modal-content" hx-swap="outerHTML"
+                      hx-confirm="Supprimer cette saisie ?">Supprimer</button>
+            </div>
+          </form>
+          {% endif %}
+          {% if not credit %}
+          <a class="small d-inline-block mt-2" href="{{ url_for('operations.edit', op_id=op.id) }}">Modifier montant, date, libellé…</a>
+          {% endif %}
+        </details>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="modal-footer justify-content-between">
+    <span class="text-secondary small">{{ detail.rows|length }} opération{{ 's' if detail.rows|length > 1 else '' }}</span>
+    <span class="fw-semibold">Total : {{ detail.total|money }} €</span>
+  </div>
+</div>

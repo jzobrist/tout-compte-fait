@@ -1,0 +1,109 @@
+{% set op = row.op %}
+{% set credit = op.direction == 'credit' %}
+{% set acc = account_label(op) %}
+<article class="pointage-row card mb-2" id="op-row-{{ op.id }}">
+  <div class="card-body p-3">
+    <div class="d-flex justify-content-between gap-2">
+      <div class="min-w-0">
+        <div class="fw-semibold text-truncate">{{ op.label or op.bank_label or '—' }}</div>
+        {% if op.bank_label and op.bank_label != op.label %}<div class="small text-secondary text-truncate">{{ op.bank_label }}</div>{% endif %}
+        <div class="small text-secondary">
+          {{ (op.bank_date or op.date).strftime('%d/%m/%Y') }}{% if acc %} · {{ acc }}{% endif %}
+        </div>
+      </div>
+      <div class="fw-semibold text-nowrap {{ 'text-success' if credit else '' }}">{{ '+' if credit else '−' }}{{ op.amount|money }} €</div>
+    </div>
+
+    {% if tab == 'rapproches' %}
+    <div class="small mt-1">
+      <span class="badge bg-secondary">{{ {'category': 'Catégorie', 'income': 'Revenu', 'refund': 'Remboursement', 'internal': 'Virement interne', 'off_budget': 'Hors budget', 'contribution': 'Contribution'}[op.classification] }}</span>
+      {% if op.category %}{{ op.category.name }}{% endif %}
+      {% if row.can_unlink %}<span class="text-secondary"> · rapproché (saisi {{ op.entered_amount|money }} €)</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if tab == 'a-classer' and row.candidates %}
+    <div class="mt-2 p-2 rounded border border-warning" id="conflict-{{ op.id }}">
+      <div class="small mb-1">⚠️ Plusieurs dépenses en attente correspondent :</div>
+      <div class="d-grid gap-1">
+        {% for c in row.candidates %}
+        <button class="btn btn-sm btn-outline-primary text-start" hx-post="{{ url_for('operations.link_op', op_id=op.id) }}"
+                hx-vals='{"entry_id": "{{ c.id }}"}'>
+          {{ c.date.strftime('%d/%m') }} · {{ c.label or '—' }} · {{ c.amount|money }} €{% if c.category %} · {{ c.category.name }}{% endif %}
+        </button>
+        {% endfor %}
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('conflict-{{ op.id }}').remove()">Aucune</button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if tab == 'a-classer' and row.entries %}
+    <details class="mt-2">
+      <summary class="small text-secondary" style="cursor:pointer">🔗 Lier à une saisie</summary>
+      <div class="d-grid gap-1 mt-2">
+        {% for e in row.entries %}
+        <button class="btn btn-sm btn-outline-primary text-start" hx-post="{{ url_for('operations.link_op', op_id=op.id) }}"
+                hx-vals='{"entry_id": "{{ e.id }}", "tab": "{{ tab }}"}'>
+          {{ e.date.strftime('%d/%m') }} · {{ e.label or '—' }} · {{ e.amount|money }} €{% if e.category %} · {{ e.category.name }}{% endif %}
+        </button>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {% if tab == 'a-classer' and row.suggestion %}
+    {% set s = row.suggestion %}
+    <div class="mt-2 d-flex align-items-center gap-2">
+      <span class="small">✨ {% if row.suggestion_category %}{{ category_label(row.suggestion_category) }}{% else %}{{ {'income': 'Revenu', 'refund': 'Remboursement', 'internal': 'Virement interne', 'off_budget': 'Hors budget', 'category': 'Catégorie'}[s.classification] }}{% endif %}</span>
+      <button class="btn btn-sm btn-primary" title="Valider la suggestion"
+              hx-post="{{ url_for('operations.classify_op', op_id=op.id) }}"
+              hx-vals='{"classification": "{{ s.classification }}", "category_id": "{{ s.category_id or '' }}", "tab": "{{ tab }}"}'>✓</button>
+    </div>
+    {% endif %}
+
+    {% set open_form = tab == 'a-classer' %}
+    <details class="mt-2" {{ 'open' if open_form else '' }}>
+      <summary class="small text-secondary" style="cursor:pointer">{{ 'Classer' if open_form else 'Reclasser' }}</summary>
+      <form class="mt-2" hx-post="{{ url_for('operations.classify_op', op_id=op.id) }}">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <select name="category_id" class="form-select form-select-sm mb-2" aria-label="Catégorie">
+          <option value="">{{ "— catégorie (remboursement) —" if credit else "— catégorie —" }}</option>
+          {% for title, cats in row.groups %}
+            {% if title %}<optgroup label="{{ title }}">{% endif %}
+            {% for c in cats %}<option value="{{ c.id }}">{{ category_label(c) }}</option>{% endfor %}
+            {% if title %}</optgroup>{% endif %}
+          {% endfor %}
+        </select>
+        <div class="d-flex flex-wrap gap-2">
+          {% if not credit %}
+          <button class="btn btn-sm btn-primary" name="classification" value="category">Classer</button>
+          {% elif not row.restricted %}
+          <button class="btn btn-sm btn-primary" name="classification" value="income">Revenu</button>
+          {% endif %}
+          {% if credit %}
+          <button class="btn btn-sm btn-outline-primary" name="classification" value="refund"
+                  title="Choisir la catégorie remboursée">Remboursement</button>
+          {% endif %}
+          {% if not row.restricted %}
+          <button class="btn btn-sm btn-outline-secondary" name="classification" value="internal">Virement interne</button>
+          <button class="btn btn-sm btn-outline-secondary" name="classification" value="off_budget">Hors budget</button>
+          {% endif %}
+        </div>
+        {% if row.refloat %}
+        <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
+          <select name="contributor_id" class="form-select form-select-sm w-auto" aria-label="Virement de">
+            {% for m in members %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-sm btn-outline-warning" name="classification" value="contribution">Contribution</button>
+        </div>
+        {% endif %}
+      </form>
+    </details>
+
+    {% if tab == 'rapproches' and row.can_unlink %}
+    <button class="btn btn-sm btn-outline-danger mt-2" hx-post="{{ url_for('operations.unlink_op', op_id=op.id) }}"
+            hx-vals='{"tab": "rapproches"}' hx-confirm="Défaire ce rapprochement ?">↩︎ Délier</button>
+    {% endif %}
+  </div>
+</article>

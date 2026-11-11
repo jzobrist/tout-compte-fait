@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Historique — Tout Compte Fait{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Historique (12 derniers mois)</h2>
+  <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
+</div>
+
+{% if not months %}
+<p class="text-muted">Aucun historique disponible pour l'instant.</p>
+{% endif %}
+
+{% for entry in months %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ entry.label }}</strong>
+    <span class="small">
+      Revenus: <strong>{{ entry.total_income|money }}€</strong> &nbsp;|&nbsp;
+      Dépenses: <strong>{{ entry.total_spent|money }}€</strong> &nbsp;|&nbsp;
+      Solde: <strong class="{{ 'text-success' if entry.total_surplus >= 0 else 'text-danger' }}">{{ entry.total_surplus|money }}€</strong>
+    </span>
+  </div>
+
+  {% if entry.operations %}
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Catégorie</th>
+          <th>Description</th>
+          <th class="text-end">Montant</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for op in entry.operations %}
+        <tr>
+          <td class="text-nowrap small text-secondary">{{ op.date.strftime('%d/%m') }}</td>
+          <td>{{ op.category.name if op.category else {'income': 'Revenu', 'internal': 'Virement interne', 'off_budget': 'Hors budget', 'contribution': 'Contribution'}.get(op.classification, '—') }}</td>
+          <td class="text-secondary small">{{ op.label or op.bank_label or '—' }}{% if op.bank_label and op.bank_label != op.label %}<br><span class="text-secondary small">{{ op.bank_label }}</span>{% endif %}{% set acc = account_label(op) %}{% if acc %}<br>{{ acc }}{% endif %}</td>
+          <td class="text-end fw-semibold {{ 'text-success' if op.direction == 'credit' else '' }}">{{ '+' if op.direction == 'credit' else '−' }}{{ op.amount|money }}€</td>
+          <td class="text-end text-nowrap">
+            {% if op.classification == 'category' %}<a href="{{ url_for('operations.edit', op_id=op.id) }}" class="btn btn-xs btn-outline-secondary me-1" title="Modifier">✏️</a>{% endif %}
+            {% if not op.is_bank_movement %}<form method="post" action="{{ url_for('operations.delete', op_id=op.id) }}" class="d-inline" data-op-label="{{ op.label or ((op.category.name if op.category else '') + ' ' + '%.2f'|format(op.amount) + '€') | e }}">
+              {{ csrf_form.hidden_tag() }}
+              <input type="hidden" name="next" value="{{ url_for('history.index') }}">
+              <button type="submit" class="btn btn-xs btn-outline-danger btn-delete-op" title="Supprimer">🗑️</button>
+            </form>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-secondary small">Aucune opération ce mois.</div>
+  {% endif %}
+
+  <!-- Résumé par catégorie -->
+  <div class="card-footer p-0">
+    <details>
+      <summary class="px-3 py-2 small text-secondary" style="cursor:pointer; list-style:none;">
+        ▸ Résumé par catégorie
+      </summary>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Catégorie</th><th>Alloué</th><th>Dépensé</th><th>Solde</th></tr></thead>
+        <tbody>
+          {% for d in entry.cat_data if d.effective > 0 or d.spent > 0 %}
+          <tr>
+            <td>{{ d.category.name }}</td>
+            <td>{{ d.effective|money }}€</td>
+            <td>{{ d.spent|money }}€</td>
+            <td class="{{ 'text-success' if d.surplus >= 0 else 'text-danger' }}">{{ d.surplus|money }}€</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+document.querySelectorAll('.btn-delete-op').forEach(function(btn) {
+  btn.addEventListener('click', function(e) {
+    const label = btn.closest('form').dataset.opLabel;
+    if (!confirm('Supprimer « ' + label + ' » ?')) { e.preventDefault(); }
+  });
+});
+</script>
+{% endblock %}

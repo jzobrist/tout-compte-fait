@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Revenus — Tout Compte Fait{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-md-5">
+    <h4 class="mb-3">Ajouter un revenu</h4>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <div class="mb-3">{{ form.amount.label(class="form-label") }}{{ form.amount(class="form-control", placeholder="3500.00") }}</div>
+      <div class="mb-3">{{ form.label.label(class="form-label") }}{{ form.label(class="form-control", placeholder="Salaire mai") }}</div>
+      <button type="submit" class="btn btn-success">Ajouter</button>
+      <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary ms-2">Retour</a>
+    </form>
+  </div>
+  <div class="col-md-7">
+    <h4 class="mb-3">Revenus récents</h4>
+    {% if incomes %}
+    <table class="table table-sm">
+      <thead><tr><th>Date</th><th>Description</th><th>Montant</th><th></th></tr></thead>
+      <tbody>
+        {% for income in incomes %}
+        <tr>
+          <td>{{ income.date.strftime('%d/%m/%Y') }}</td>
+          <td>{{ income.label }}</td>
+          <td class="fw-bold">{{ income.amount|money }}€</td>
+          <td>
+            {% if not income.operation_id %}
+            <form method="post" action="{{ url_for('incomes.delete', income_id=income.id) }}" class="d-inline">
+              {{ form.hidden_tag() }}
+              <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce revenu ?')">✕</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Aucun revenu enregistré ce mois.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

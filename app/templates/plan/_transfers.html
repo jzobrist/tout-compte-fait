@@ -1,0 +1,21 @@
+<div id="transfers"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if transfers %}
+  <h6 class="mt-3">Virements vers le commun</h6>
+  <ul class="list-unstyled small mb-0">
+    {% for t in transfers %}
+    {% if t.capped and t.user.id != current_user.id %}
+    {# a capped supplement equals the member's cap: never shown to the partner #}
+    <li>{{ t.user.display_name }} : <span class="text-warning">plafond atteint pour {{ t.user.display_name }}</span></li>
+    {% else %}
+    <li>{{ t.user.display_name }} : supplément {{ t.requested|money }} € (reste à faire {{ t.due|money }} €){% if t.capped %} · <span class="text-warning">plafond atteint pour {{ t.user.display_name }}</span>{% endif %}</li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if my_contribution %}
+  <div class="small mt-2">Virement vers le commun : {{ my_contribution.amount|money }} € ({{ my_contribution.status }}) — reste à faire {{ my_contribution.due|money }} €</div>
+  {% endif %}
+  {% if my_transfer and my_transfer.requested > 0 %}
+  <div class="small mt-2">Supplément de virement au commun : {{ my_transfer.requested|money }} € (reste à faire {{ my_transfer.due|money }} €)</div>
+  {% endif %}
+</div>

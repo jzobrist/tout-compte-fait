@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — {{ month_name }} {{ year }}{% endblock %}
+{% block content %}
+
+{% include 'dashboard/_alert_banner.html' %}
+{% include 'dashboard/_balance_alerts.html' %}
+
+<!-- Header: month navigation -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <a href="{{ url_for('dashboard.index', year=prev_year, month=prev_month) }}" class="btn btn-sm btn-outline-secondary">← Préc.</a>
+  <h5 class="mb-0 fw-bold">{{ current_pot.name }} — {{ month_name }} {{ year }}</h5>
+  {% if next_month %}
+  <a href="{{ url_for('dashboard.index', year=next_month[0], month=next_month[1]) }}" class="btn btn-sm btn-outline-secondary">Suiv. →</a>
+  {% else %}
+  <span class="btn btn-sm btn-outline-secondary disabled">Suiv. →</span>
+  {% endif %}
+</div>
+
+{% include 'dashboard/_balance_card.html' %}
+
+<!-- KPI cards -->
+<div class="row g-2 mb-3">
+  <div class="col-4">
+    <div class="kpi-card">
+      <div class="kpi-label">Revenus</div>
+      <div class="kpi-value" style="color: var(--primary);">{{ total_income|money }}€</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="kpi-card">
+      <div class="kpi-label">Dépensé</div>
+      <div class="kpi-value" style="color: var(--warn);">{{ total_spent|money }}€</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="kpi-card">
+      <div class="kpi-label">Restant</div>
+      <div class="kpi-value" style="color: {% if total_remaining >= 0 %}var(--ok){% else %}var(--danger){% endif %};">
+        {{ total_remaining|money }}€
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick actions -->
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a href="{{ url_for('incomes.index') }}" class="btn btn-sm btn-outline-primary">+ Revenu</a>
+  <button class="btn btn-sm btn-outline-secondary"
+          hx-get="{{ url_for('adjustments.form') }}"
+          hx-target="#adjustment-modal-body"
+          hx-swap="innerHTML"
+          data-bs-toggle="modal" data-bs-target="#adjustmentModal">
+    ⇄ Réallouer
+  </button>
+  <!-- FAB visible on desktop only (mobile uses bottom nav) -->
+  <button class="btn btn-primary d-none d-md-inline-flex align-items-center gap-1"
+          hx-get="{{ url_for('operations.form') }}"
+          hx-target="#operation-modal-body"
+          hx-swap="innerHTML"
+          data-bs-toggle="modal" data-bs-target="#operationModal">
+    + Pointer une dépense
+  </button>
+</div>
+
+<!-- Category list (HTMX target) -->
+<div id="category-list">
+  {% include 'dashboard/_category_list.html' %}
+</div>
+
+<!-- Gauge detail window (HTMX target) -->
+<div class="modal fade" id="detailModal" tabindex="-1"
+     hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+  <div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content" id="detail-modal-body">
+    <div class="modal-body">Chargement...</div>
+  </div></div>
+</div>
+
+<!-- Charts -->
+<div class="row mt-4">
+  <div class="col-md-8">
+    <div class="card"><div class="card-body">
+      <h6 class="card-title fw-semibold mb-3">Revenus vs Dépenses (6 derniers mois)</h6>
+      <canvas id="chart-history"></canvas>
+    </div></div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+  const chartData = {{ chart_data | tojson }};
+  renderHistoryChart(chartData);
+  // Gauge detail: refresh the gauges once the window closes if something was changed in it.
+  (function () {
+    const modal = document.getElementById('detailModal');
+    let changed = false;
+    modal.addEventListener('htmx:afterRequest', function (e) {
+      if (e.detail.successful && (e.detail.requestConfig.verb || '').toLowerCase() === 'post') changed = true;
+    });
+    modal.addEventListener('hidden.bs.modal', function () {
+      if (changed) window.location.reload();
+    });
+  })();
+</script>
+{% endblock %}

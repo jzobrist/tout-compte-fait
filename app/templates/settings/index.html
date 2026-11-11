@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block title %}Paramètres — Tout Compte Fait{% endblock %}
+{% block content %}
+<h2 class="mb-4">Paramètres</h2>
+
+<div class="row g-4">
+
+  <!-- Thème -->
+  <div class="col-12 col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>🎨 Apparence</strong></div>
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <span>Mode sombre</span>
+        <button id="theme-toggle-settings" class="btn btn-outline-secondary btn-sm">
+          <span id="theme-label-settings">...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Foyer / Invitation -->
+  <div class="col-12 col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>🏠 Foyer — {{ current_user.household.name }}</strong></div>
+      <div class="card-body">
+        {% if invite_url %}
+        <p class="small text-secondary mb-2">Lien valable 48h — partage-le à la personne à inviter :</p>
+        <div class="input-group mb-3">
+          <input type="text" class="form-control form-control-sm" id="invite-url" value="{{ invite_url }}" readonly>
+          <button class="btn btn-sm btn-outline-secondary" onclick="copyInvite()" title="Copier">📋</button>
+        </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('settings.generate_invite') }}">
+          {{ csrf_form.hidden_tag() }}
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            {{ '🔄 Regénérer le lien' if invite_url else '📨 Générer un lien d\'invitation' }}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Catégories -->
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header"><strong>🏷️ Catégories</strong></div>
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <span class="small text-secondary">Créer, renommer, partager ou supprimer les catégories</span>
+        <a href="{{ url_for('categories.index') }}" class="btn btn-outline-primary btn-sm">Ouvrir</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Banque -->
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header"><strong>🏦 Ma banque</strong></div>
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <span class="small text-secondary">Synchronisation bancaire (Enable Banking)</span>
+        <a href="{{ url_for('bank.index') }}" class="btn btn-outline-primary btn-sm">Ouvrir</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Budget -->
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header"><strong>📅 Mois budgétaire — {{ pot.name }}</strong></div>
+      <div class="card-body">
+        <p class="small text-secondary mb-3">
+          Si vos revenus arrivent en fin de mois, choisissez ce jour comme début du mois budgétaire.
+          Un revenu saisi à partir de ce jour sera attribué au mois suivant.
+        </p>
+        <form method="post" action="{{ url_for('settings.update_pot') }}">
+          {{ pot_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ pot_form.income_start_day.label(class="form-label") }}
+            {{ pot_form.income_start_day(class="form-control", min=1, max=28) }}
+            <div class="form-text">Entre 1 (mois calendaire) et 28. Ex : 27 si les salaires tombent le 27.</div>
+          </div>
+          <button type="submit" class="btn btn-gradient w-100">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Solidarité -->
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header"><strong>🤝 Foyer — solidarité</strong></div>
+      <div class="card-body">
+        <p class="small text-secondary mb-3">
+          Les virements au commun visent à laisser chaque compte perso au moins à ce montant au-dessus de son découvert autorisé.
+        </p>
+        <form method="post" action="{{ url_for('settings.update_household') }}">
+          {{ household_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ household_form.solidarity_margin.label(class="form-label") }}
+            {{ household_form.solidarity_margin(class="form-control", min=0, step="any") }}
+          </div>
+          <button type="submit" class="btn btn-gradient w-100">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mot de passe -->
+  <div class="col-12 col-md-6">
+    <div class="card">
+      <div class="card-header"><strong>🔑 Changer le mot de passe</strong></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('settings.change_password') }}">
+          {{ pw_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ pw_form.current_password.label(class="form-label") }}
+            {{ pw_form.current_password(class="form-control") }}
+          </div>
+          <div class="mb-3">
+            {{ pw_form.new_password.label(class="form-label") }}
+            {{ pw_form.new_password(class="form-control") }}
+          </div>
+          <div class="mb-3">
+            {{ pw_form.confirm_password.label(class="form-label") }}
+            {{ pw_form.confirm_password(class="form-control") }}
+          </div>
+          <button type="submit" class="btn btn-gradient w-100">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function() {
+    const root = document.documentElement;
+    const btn = document.getElementById('theme-toggle-settings');
+    const lbl = document.getElementById('theme-label-settings');
+    function updateSettingsBtn() {
+      lbl.textContent = root.classList.contains('dark') ? '☀️ Passer en clair' : '🌙 Passer en sombre';
+    }
+    updateSettingsBtn();
+    btn.addEventListener('click', function() {
+      root.classList.toggle('dark');
+      localStorage.setItem('theme', root.classList.contains('dark') ? 'dark' : 'light');
+      updateSettingsBtn();
+      const t = document.getElementById('theme-toggle');
+      if (t) t.textContent = root.classList.contains('dark') ? '☀️' : '🌙';
+    });
+  })();
+
+  function copyInvite() {
+    const input = document.getElementById('invite-url');
+    navigator.clipboard.writeText(input.value).then(function() {
+      alert('Lien copié !');
+    });
+  }
+</script>
+{% endblock %}
