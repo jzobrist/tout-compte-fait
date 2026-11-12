@@ -15,3 +15,7 @@ instance/
 # Notes de conception internes (contexte personnel) — gardées en local, jamais publiées
 docs/
 *.pem
+
+# Scénarios de test du foyer (dev uniquement, non publiés)
+scripts/dev_scenarios.py
+tests/test_dev_scenarios.py
