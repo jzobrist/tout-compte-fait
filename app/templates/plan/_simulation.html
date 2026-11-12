@@ -4,7 +4,7 @@
 {% set r = s.result %}
 <hr>
 <h6>Simuler le plan de {{ r.label }}</h6>
-<form hx-post="{{ url_for('plan.simulation', pot_id=pot.id) }}" hx-trigger="input changed delay:500ms"
+<form hx-post="{{ url_for('plan.simulation', pot_id=pot.id) }}" hx-trigger="input delay:500ms"
       hx-target="#simulation-result" hx-swap="innerHTML">
   {% for u in s.members %}
   <div class="mb-1">

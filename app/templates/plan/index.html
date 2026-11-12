@@ -13,7 +13,7 @@
   <div class="card mb-3"><div class="card-body">
     <h6>Remise à flot</h6>
     <form hx-post="{{ url_for('plan.settings', pot_id=pot.id) }}" hx-target="#envelopes" hx-swap="outerHTML"
-          hx-trigger="input changed delay:400ms">
+          hx-trigger="input delay:400ms">
       <label class="form-label small mb-0">Étaler sur <strong id="months-label">{{ plan.months }}</strong> mois</label>
       <input type="range" class="form-range" name="months" min="1" max="6" step="1" value="{{ plan.months }}"
              oninput="document.getElementById('months-label').textContent=this.value">
