@@ -232,11 +232,15 @@ def _recalculate_plan(plan):
 
 
 def set_settings(plan, months, split):
+    from app.services import ceiling_service
+    if ceiling_service.is_frozen(plan.pot, plan.year, plan.month):
+        raise ceiling_service.CeilingError('frozen')
     plan.months = min(MONTHS_MAX, max(MONTHS_MIN, int(months)))
     if split is not None and plan.pot.kind == 'common':
         split = min(1.0, max(0.0, float(split)))
         plan.split = round(round(split / SPLIT_STEP) * SPLIT_STEP, 2)
     db.session.commit()
+    ceiling_service.reset(plan.pot, plan.year, plan.month)
     db.session.refresh(plan)
     _recalculate_plan(plan)
 
