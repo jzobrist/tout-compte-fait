@@ -1,0 +1,2 @@
+{# « ↓ ton virement » between ① and ②. Context: my_contribution of the VIEWER's personal view. #}
+<p id="my-transfer-arrow" class="text-center fw-bold my-3{% if not my_contribution %} d-none{% endif %}"{% if oob %} hx-swap-oob="true"{% endif %}>{% if my_contribution %}↓ ton virement : {{ my_contribution.amount|money }} € ({{ my_contribution.status }}){% endif %}</p>

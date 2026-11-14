@@ -5,9 +5,7 @@
   {% include 'dashboard/_balance_alerts.html' %}
   <h5 class="fw-bold mb-3">Plan du mois</h5>
   {{ common_html|safe }}
-  {% if my_contribution %}
-  <p class="text-center fw-bold my-3">↓ ton virement : {{ my_contribution.amount|money }} € ({{ my_contribution.status }})</p>
-  {% endif %}
+  {% include 'plan/_my_transfer_arrow.html' %}
   {{ personal_html|safe }}
 </div>
 {% endblock %}

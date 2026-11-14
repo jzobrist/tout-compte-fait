@@ -187,6 +187,13 @@ def envelope_part(plan):
     return share * (1.0 - plan.split) + _transfers(plan)[1]
 
 
+def category_offsets(bm, cat, bmc):
+    """(carry_in, net adjustments) of a category this month: effective budget = ceiling + both."""
+    if bmc is None:
+        return 0.0, 0.0
+    return bmc.carry_in, get_category_effective_budget(bm, cat) - bmc.base_allocated
+
+
 def envelope_cuts(plan, bm):
     """Reduction of each dynamic envelope (auto prorata of pct), within capacity."""
     if plan is None:
@@ -202,9 +209,7 @@ def envelope_cuts(plan, bm):
         if bmc is not None and bmc.closed_at is not None:
             remaining = 0.0
         else:
-            carry_in = bmc.carry_in if bmc is not None else 0.0
-            adjustments = (get_category_effective_budget(bm, cat) - bmc.base_allocated
-                           if bmc is not None else 0.0)
+            carry_in, adjustments = category_offsets(bm, cat, bmc)
             remaining = max(0.0, brut + carry_in + adjustments - get_spent_for_category(bm, cat))
         capacity = max(0.0, min(remaining, brut - (cat.min_amount or 0.0)))
         if total_pct > 0:
@@ -329,6 +334,8 @@ def build_view(pot, today, year=None, month=None, user=None):
     plan = ensure_plan(pot, bm, today)
     has_deficit = plan is not None and plan.deficit > 0
     from app.services import ceiling_service
+    if pot.kind == 'common':
+        ceiling_service.freeze_legacy(pot, bm.year, bm.month)
     ceilings = ceiling_service.report(bm)
     order = {'dynamic': 0, 'fixed_amount': 1, 'fixed_auto': 1}
     cats = sorted(Category.query.filter_by(pot_id=pot.id).all(),

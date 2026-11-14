@@ -395,3 +395,95 @@ def test_reopen_is_atomic_with_unfreeze(db, household_clean, mail_outbox, monkey
     db.session.rollback()
     assert cs.is_frozen(h.common, *M) and cs.is_frozen(h.personal_a, *M)
     assert ccs.get_plan(h.common, *M).status == 'validated'
+
+
+# --- final review fixes ------------------------------------------------------------------------
+
+def test_low_bound_accounts_for_carry_in(db, household_clean):
+    h = household_clean
+    pot = h.personal_a
+    a = Category(name='A', type='dynamic', percentage=0.2, pot_id=pot.id, carry_over=True)
+    db.session.add(a)
+    db.session.commit()
+    prev = get_or_create_budget_month(pot.id, 2026, 10)
+    db.session.add(BudgetMonthCategory(budget_month_id=prev.id, category_id=a.id,
+                                       base_allocated=300.0, carry_in=0.0))
+    db.session.commit()
+    bm = _bm(pot, 1000.0)
+    assert _base(bm, a).carry_in == pytest.approx(300.0)
+    _spend(db, h, pot, a, 350.0)
+    env = cs.report(bm).envelopes[a.id]
+    assert env.amount == pytest.approx(200.0)
+    assert env.low == pytest.approx(50.0)          # 350 spent - 300 carried in
+    cs.set_ceiling(pot, 2026, 11, a, 0.0)
+    assert cs.report(bm).envelopes[a.id].amount == pytest.approx(50.0)
+
+
+def test_pin_current_keeps_closed_auto_envelope_ceiling(db, setup):
+    h, pot, a, b, bm = setup
+    _plan(db, pot, 100.0)
+    before = cs.report(bm).envelopes[a.id].amount          # 160
+    close_envelope(bm, a, TODAY)
+    r = cs.report(bm)
+    assert r.envelopes[a.id].amount == pytest.approx(before)
+    assert not r.envelopes[a.id].auto
+    assert EnvelopeCeiling.query.filter_by(category_id=a.id).one().amount == pytest.approx(before)
+
+
+def test_close_in_j6_draft_keeps_need_and_shares(db, household_clean, mail_outbox):
+    h = household_clean
+    plan, loisirs, vacances = _ceiling_setup(db, h)
+    bm = _common_bm(h)
+    ceil_before = cs.report(bm).envelopes[loisirs.id].amount
+    need_before = ccs.need(plan).total
+    shares_before = dict(ccs.shares(plan))
+    close_envelope(bm, loisirs, CTODAY)
+    assert cs.report(bm).envelopes[loisirs.id].amount == pytest.approx(ceil_before)
+    assert ccs.need(plan).total == pytest.approx(need_before)
+    assert ccs.shares(plan) == pytest.approx(shares_before)
+
+
+def test_close_when_frozen_does_not_pin(db, household_clean, mail_outbox):
+    h = household_clean
+    _, loisirs, _ = _ceiling_setup(db, h)
+    _validate_common(h)
+    rows = {c.category_id: c.amount for c in cs.get_plan(h.common, *M).ceilings}
+    close_envelope(_common_bm(h), loisirs, CTODAY)
+    assert {c.category_id: c.amount for c in cs.get_plan(h.common, *M).ceilings} == rows
+
+
+def _make_legacy_validated(db, h):
+    """Validated ContributionPlan from before the feature: no EnvelopePlan."""
+    plan, loisirs, vacances = _ceiling_setup(db, h)
+    _validate_common(h)
+    ep = cs.get_plan(h.common, *M)
+    EnvelopeCeiling.query.filter_by(plan_id=ep.id).delete()
+    db.session.delete(ep)
+    db.session.commit()
+    return plan, loisirs, vacances
+
+
+def test_legacy_validated_common_month_is_frozen(db, household_clean, mail_outbox):
+    h = household_clean
+    _, loisirs, _ = _make_legacy_validated(db, h)
+    assert cs.get_plan(h.common, *M) is None
+    assert cs.is_frozen(h.common, *M)
+    assert cs.report(_common_bm(h)).frozen
+    with pytest.raises(cs.CeilingError, match='frozen'):
+        cs.set_ceiling(h.common, *M, loisirs, 300.0)
+    with pytest.raises(cs.CeilingError, match='frozen'):
+        rs.set_settings(rs.get_plan(h.common, *M), 2, None)
+
+
+def test_build_view_lazily_freezes_legacy_validated_month(db, household_clean, mail_outbox):
+    h = household_clean
+    _, loisirs, vacances = _make_legacy_validated(db, h)
+    rs.build_view(h.common, CTODAY, user=h.user_a)
+    ep = cs.get_plan(h.common, *M)
+    assert ep is not None and ep.validated_at is not None
+    assert {c.category_id for c in ep.ceilings} == {loisirs.id, vacances.id}
+    bm = _common_bm(h)
+    before = {c.id: _base(bm, c).base_allocated for c in (loisirs, vacances)}
+    bm.total_income = 5000.0
+    ccs.recalculate_household(h.common, *M)
+    assert {c.id: _base(bm, c).base_allocated for c in (loisirs, vacances)} == pytest.approx(before)

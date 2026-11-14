@@ -128,6 +128,11 @@ def _set_closed(bm, category, today, closed):
         bmc = BudgetMonthCategory(budget_month_id=bm.id, category_id=category.id,
                                   base_allocated=0.0, carry_in=0.0)
         db.session.add(bmc)
+    if closed:
+        # before the close changes the capacities: a closed envelope keeps its current ceiling
+        from app.services import ceiling_service
+        ceiling_service.pin_current(bm.pot, bm.year, bm.month, category,
+                                    commit=False)
     bmc.closed_at = datetime.now(timezone.utc).replace(tzinfo=None) if closed else None
     db.session.commit()
 

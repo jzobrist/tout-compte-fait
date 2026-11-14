@@ -725,3 +725,41 @@ def test_common_validation_response_disables_common_sliders(db, household_clean,
     body = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX).get_data(as_text=True)
     sliders = [s for s in body.split('<input') if f'/plan/{h.common.id}/ceiling/' in s]
     assert sliders and all('disabled' in s.split('>')[0] for s in sliders)
+
+
+def test_common_slider_response_refreshes_my_transfer_arrow(db, household_clean):
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'id="my-transfer-arrow"' in page
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    body = r.get_data(as_text=True)
+    assert 'id="my-transfer-arrow"' in body and 'hx-swap-oob' in body
+    # B's response carries B's own arrow only, never A's
+    rb = h.client_b.post(_ceiling_url(h.common, culture), data={'amount': '121'}, headers=HX)
+    assert 'Loisirs A' not in rb.get_data(as_text=True)
+
+
+def test_j6_slider_and_validation_refresh_arrow_amount(db, household_clean, frozen_today):
+    import re
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    loisirs = _cat(db, h.common, 'Loisirs', pct=0.1)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+
+    def arrow(body):
+        found = re.search(r'id="my-transfer-arrow"[^>]*>([^<]*)<', body)
+        assert found, body
+        return found.group(1)
+
+    page = arrow(h.client_a.get('/plan').get_data(as_text=True))
+    assert 'provisoire' in page
+    r = h.client_a.post(_ceiling_url(h.common, loisirs), data={'amount': '0'}, headers=HX)
+    moved = arrow(r.get_data(as_text=True))
+    assert moved != page and 'provisoire' in moved
+    assert arrow(h.client_a.get('/plan').get_data(as_text=True)) == moved
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    assert 'provisoire' in arrow(r.get_data(as_text=True))
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    assert 'validé' in arrow(h.client_a.get('/plan').get_data(as_text=True))

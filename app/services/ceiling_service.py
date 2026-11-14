@@ -48,9 +48,43 @@ def get_plan(pot, year, month):
     return EnvelopePlan.query.filter_by(pot_id=pot.id, year=year, month=month).first()
 
 
+def _legacy_validated(pot, year, month):
+    """Common month whose ContributionPlan is validated: its shares are frozen, so are its ceilings
+    (also for plans validated before this feature, which have no EnvelopePlan)."""
+    if pot.kind != 'common':
+        return False
+    from app.services import contribution_service as cs
+    cplan = cs.get_plan(pot, year, month)
+    return cplan is not None and cplan.status == 'validated'
+
+
 def is_frozen(pot, year, month):
     plan = get_plan(pot, year, month)
-    return plan is not None and plan.validated_at is not None
+    return (plan is not None and plan.validated_at is not None) or _legacy_validated(pot, year, month)
+
+
+def freeze_legacy(pot, year, month):
+    """Store the ceilings of a common month validated before this feature (lazy, idempotent)."""
+    if not _legacy_validated(pot, year, month):
+        return
+    plan = get_plan(pot, year, month)
+    if plan is None or plan.validated_at is None:
+        freeze(pot, year, month)
+
+
+def pin_current(pot, year, month, category, commit=True):
+    """Store the envelope's current amount as its ceiling (closing: « plafond = valeur actuelle »).
+    No-op when the month is frozen or the envelope already has a stored ceiling."""
+    if category.type != 'dynamic' or is_frozen(pot, year, month):
+        return
+    bm = get_or_create_budget_month(pot.id, year, month)
+    env = report(bm).envelopes.get(category.id)
+    if env is None or not env.auto:
+        return
+    plan = _upsert_plan(pot, year, month)
+    db.session.add(EnvelopeCeiling(plan_id=plan.id, category_id=category.id, amount=env.amount))
+    if commit:
+        db.session.commit()
 
 
 def report(bm):
@@ -60,7 +94,7 @@ def report(bm):
     cats = Category.query.filter_by(pot_id=pot.id, type='dynamic').order_by(Category.id).all()
     eplan = get_plan(pot, bm.year, bm.month)
     stored = {c.category_id: c.amount for c in eplan.ceilings} if eplan else {}
-    frozen = eplan is not None and eplan.validated_at is not None
+    frozen = is_frozen(pot, bm.year, bm.month)
     rplan = refloat_service.get_plan(pot, bm.year, bm.month)
     has_deficit = rplan is not None and rplan.deficit > 0
     cuts = envelope_cuts(rplan, bm) if has_deficit else CutReport()
@@ -71,7 +105,10 @@ def report(bm):
         bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
         closed = bmc is not None and bmc.closed_at is not None
         amount = stored[cat.id] if cat.id in stored else brut - cuts.cuts.get(cat.id, 0.0)
-        low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat))
+        # effective budget = ceiling + carry_in + net adjustments: only the spending they do not
+        # already cover forces the ceiling up (same `remaining` as envelope_cuts)
+        carry_in, adjustments = refloat_service.category_offsets(bm, cat, bmc)
+        low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat) - carry_in - adjustments, 0.0)
         # No max_amount: a personal slider is only bounded by what is left to allocate (below).
         if pot.kind == 'personal':
             ceiling = cat.max_amount if cat.max_amount is not None else math.inf
@@ -144,6 +181,8 @@ def set_ceiling(pot, year, month, category, amount):
     env = report(bm).envelopes[category.id]
     if env.locked:
         raise CeilingError('locked')
+    # high wins over low if they ever cross (personal room smaller than the spending to cover):
+    # a ceiling is never stored above what is left to allocate.
     amount = min(env.high, max(env.low, float(amount)))
     plan = _upsert_plan(pot, year, month)
     row = next((c for c in plan.ceilings if c.category_id == category.id), None)
