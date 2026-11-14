@@ -443,6 +443,33 @@ def test_close_in_j6_draft_keeps_need_and_shares(db, household_clean, mail_outbo
     assert ccs.shares(plan) == pytest.approx(shares_before)
 
 
+def test_set_settings_keeps_closed_envelope_ceiling(db, setup):
+    h, pot, a, b, bm = setup
+    plan = _plan(db, pot, 100.0)
+    before = cs.report(bm).envelopes[a.id].amount          # 160
+    close_envelope(bm, a, TODAY)
+    rs.set_settings(plan, 2, None)
+    r = cs.report(bm)
+    assert r.envelopes[a.id].amount == pytest.approx(before)
+    assert r.envelopes[a.id].locked
+
+
+def test_set_settings_in_j6_draft_keeps_closed_envelope_need_and_shares(db, household_clean, mail_outbox):
+    h = household_clean
+    plan, loisirs, vacances = _ceiling_setup(db, h)
+    bm = _common_bm(h)
+    close_envelope(bm, loisirs, CTODAY)
+    ceil_before = cs.report(bm).envelopes[loisirs.id].amount
+    need_before = ccs.need(plan).total
+    shares_before = dict(ccs.shares(plan))
+    rplan = rs.get_plan(h.common, *M)
+    rs.set_settings(rplan, 1, None)  # reset runs; closed envelope must keep its pinned row
+    assert cs.report(bm).envelopes[loisirs.id].amount == pytest.approx(ceil_before)
+    assert EnvelopeCeiling.query.filter_by(category_id=loisirs.id).count() == 1
+    assert ccs.need(plan).total == pytest.approx(need_before)
+    assert ccs.shares(plan) == pytest.approx(shares_before)
+
+
 def test_close_when_frozen_does_not_pin(db, household_clean, mail_outbox):
     h = household_clean
     _, loisirs, _ = _ceiling_setup(db, h)

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from app.extensions import db
-from app.models.budget import BudgetMonthCategory
+from app.models.budget import BudgetMonth, BudgetMonthCategory
 from app.models.category import Category
 from app.models.ceiling import EnvelopeCeiling, EnvelopePlan
 from app.services import refloat_service
@@ -263,12 +263,22 @@ def reopen_personal(pot, year, month):
 
 
 def reset(pot, year, month):
-    """Forget the stored sliders (back to the preset). Refused once the month is frozen."""
+    """Forget the stored sliders (back to the preset), except those pinned on closed envelopes.
+    Refused once the month is frozen."""
     plan = get_plan(pot, year, month)
     if plan is None:
         return
     if plan.validated_at is not None:
         raise CeilingError('frozen')
-    EnvelopeCeiling.query.filter_by(plan_id=plan.id).delete(synchronize_session=False)
+    bm = BudgetMonth.query.filter_by(pot_id=pot.id, year=year, month=month).first()
+    closed = []
+    if bm is not None:
+        closed = [r.category_id for r in BudgetMonthCategory.query.filter(
+            BudgetMonthCategory.budget_month_id == bm.id,
+            BudgetMonthCategory.closed_at.isnot(None))]
+    q = EnvelopeCeiling.query.filter_by(plan_id=plan.id)
+    if closed:
+        q = q.filter(EnvelopeCeiling.category_id.notin_(closed))
+    q.delete(synchronize_session=False)
     db.session.expire(plan)
     db.session.commit()
