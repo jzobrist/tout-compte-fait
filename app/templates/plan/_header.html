@@ -1,5 +1,5 @@
 {% set b = fm.balance %}
-<div id="plan-header" class="row g-2 mb-3"{% if oob %} hx-swap-oob="true"{% endif %}>
+<div id="plan-header-{{ pot.id }}" class="row g-2 mb-3"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div class="col-6">
     <div class="kpi-card">
       <div class="kpi-label">Solde réel</div>
@@ -17,7 +17,7 @@
     <div class="kpi-card">
       <div class="kpi-label">Argent vraiment libre</div>
       {% if fm.value is not none %}
-      <div class="kpi-value" id="free-value" style="color: {% if fm.value >= 0 %}var(--ok){% else %}var(--danger){% endif %};">{{ fm.value|money }} €</div>
+      <div class="kpi-value" id="free-value-{{ pot.id }}" style="color: {% if fm.value >= 0 %}var(--ok){% else %}var(--danger){% endif %};">{{ fm.value|money }} €</div>
       <div class="small text-secondary">reste prévu {{ fm.remaining|money }} €{% if fm.pending_entries %} · saisies en attente {{ fm.pending_entries|money }} €{% endif %}{% if fm.transfer_due %} · supplément à virer {{ fm.transfer_due|money }} €{% endif %}{% if fm.transfer_expected %} · suppléments attendus inclus{% endif %}</div>
       {% else %}
       <div class="kpi-value text-secondary">—</div>

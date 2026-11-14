@@ -241,6 +241,7 @@ def _j6_secret_household(h):
     _db.session.add_all([
         Category(name='Loyer', type='fixed_amount', amount=2400.0, pot_id=h.common.id, carry_over=False),
         # 25% only: need < sum of bases, so the equal reste a vivre R is > 0
+        # (0.25, not 0.2: a 0.2 slider max printed '866', colliding with a numeric privacy needle)
         Category(name='Courses', type='dynamic', percentage=0.25, pot_id=h.common.id, carry_over=False),
         Category(name='Prêt secret', type='fixed_amount', amount=CHARGE_A, constrained=True,
                  pot_id=h.personal_a.id, carry_over=False),

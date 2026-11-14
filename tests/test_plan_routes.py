@@ -88,7 +88,7 @@ def test_settings_updates_months_and_split(db, household_clean):
     assert resp.status_code == 200
     db.session.refresh(plan)
     assert (plan.months, plan.split) == (3, 0.7)
-    assert 'id="envelopes"' in resp.get_data(as_text=True)
+    assert 'id="envelopes-' in resp.get_data(as_text=True)
 
 
 def test_close_and_reopen_envelope_routes(db, household_clean):
@@ -184,7 +184,7 @@ def test_common_plan_waiting_shows_names_only(db, household_clean, frozen_today)
     _select(h.client_a, h.common)
     html_a = h.client_a.get('/plan').get_data(as_text=True)
     assert 'en attente du salaire de B' in html_a
-    assert '3 000' not in html_a and 'Calculer quand même' in html_a
+    assert '2 000' not in html_a and 'Calculer quand même' in html_a
     _select(h.client_b, h.common)
     html_b = h.client_b.get('/plan').get_data(as_text=True)
     assert 'en attente de votre salaire' in html_b
@@ -536,7 +536,7 @@ def test_personal_validate_route_waiting_400_then_ok(db, household_clean, monkey
     monkeypatch.undo()
     resp = h.client_a.post(f'{base}/validate', headers=HX)
     assert resp.status_code == 200
-    assert 'id="envelopes"' in resp.get_data(as_text=True)
+    assert 'id="envelopes-' in resp.get_data(as_text=True)
     bm = current_budget_month(h.personal_a, date.today())
     assert cs.is_frozen(h.personal_a, bm.year, bm.month)
     assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400   # already frozen
@@ -561,3 +561,136 @@ def test_settings_refused_when_frozen(db, household_clean):
     resp = h.client_a.post(f'/plan/{h.common.id}/settings', headers=HX,
                            data={'months': '3', 'split': '70'})
     assert resp.status_code == 400
+
+
+# --- one page: ① Commun then ② Mon perso -----------------------------------------------------
+
+def _personal_a_setup(db, h):
+    cat = _cat(db, h.personal_a, 'Loisirs A', pct=0.3)
+    _income(h.personal_a, 4321.0)   # unallocated = 4321 * 0.7 = 3024.70
+    return cat
+
+
+def test_plan_page_shows_common_then_my_personal(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    _select(h.client_a, h.personal_a)    # the session's pot does not matter any more
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert html.index('① Commun') < html.index('② Mon perso')
+    assert 'Loisirs A' in html and f'id="envelopes-{h.personal_a.id}"' in html
+    assert f'id="envelopes-{h.common.id}"' in html
+    assert f'personal-validation-{h.personal_a.id}' in html
+
+
+def test_plan_page_partner_never_sees_my_personal(db, household_clean):
+    import re
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    needle = re.compile(r'3\D{0,3}024')
+
+    def clean(html):
+        assert 'Loisirs A' not in html and not needle.search(html)
+        assert f'personal-validation-{h.personal_a.id}' not in html
+
+    clean(h.client_b.get('/plan').get_data(as_text=True))
+    r = h.client_b.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    assert r.status_code == 200
+    clean(r.get_data(as_text=True))
+    # A's own response does carry A's personal block
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '130'}, headers=HX)
+    assert 'Loisirs A' in r.get_data(as_text=True)
+
+
+def test_plan_page_partner_never_sees_my_personal_validation(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    for client, name in ((h.client_a, 'a'), (h.client_b, 'b')):
+        r = client.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+        assert r.status_code == 200
+        assert ('Loisirs A' in r.get_data(as_text=True)) == (name == 'a')
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/reopen', headers=HX)
+    assert 'Loisirs A' not in r.get_data(as_text=True)
+    assert 'Loisirs A' not in h.client_b.get('/plan').get_data(as_text=True)
+
+
+def test_common_slider_response_refreshes_my_personal_oob(db, household_clean):
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    body = r.get_data(as_text=True)
+    assert f'personal-validation-{h.personal_a.id}' in body
+    assert f'/plan/{h.common.id}/ceiling/' not in body      # common sliders are not re-rendered
+    assert f'/plan/{h.personal_a.id}/ceiling/' in body       # the personal ones are (oob)
+
+
+def test_personal_validate_button_disabled_until_common_validated(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'en attente du plan commun' in html
+    assert 'Valider mon perso' in html and 'disabled' in html.split('Valider mon perso')[0][-200:]
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'en attente du plan commun' not in html
+    assert 'disabled' not in html.split('Valider mon perso')[0][-200:]
+
+
+def test_full_page_with_validated_common_plan(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.25)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert html.index('① Commun') < html.index('ton virement') < html.index('② Mon perso')
+    assert '(validé)' in html
+    common_sliders = [s for s in html.split('<input') if f'/plan/{h.common.id}/ceiling/' in s]
+    assert common_sliders and all('disabled' in s.split('>')[0] for s in common_sliders)
+    perso = [s for s in html.split('<input') if f'/plan/{h.personal_a.id}/ceiling/' in s]
+    assert perso and not any('disabled' in s.split('>')[0] for s in perso)
+    r = h.client_a.post(f'/plan/{h.personal_a.id}/ceilings/validate', headers=HX)
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'Plafonds figés pour le mois' in body and 'Rouvrir mon perso' in body
+
+
+def test_slider_attributes_rounded_to_cents(db, household_clean):
+    import re
+    h = household_clean
+    _account(db, h.personal_a, 500.0)
+    _cat(db, h.personal_a, 'Loisirs A', pct=1 / 3, floor=10.004)
+    _income(h.personal_a, 1000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    tag = next(s for s in html.split('<input') if f'/plan/{h.personal_a.id}/ceiling/' in s)
+    for attr in ('min', 'max', 'value'):
+        val = re.search(rf'\b{attr}="([^"]*)"', tag).group(1)
+        assert re.fullmatch(r'-?\d+(\.\d{1,2})?', val), (attr, val)
+    lo, hi, v = (float(re.search(rf'\b{a}="([^"]*)"', tag).group(1)) for a in ('min', 'max', 'value'))
+    assert lo <= v <= hi
+
+
+def test_summary_j6_common_has_no_reportes_line(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.5, floor=100.0)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert '→ reportés' not in html
+
+
+def test_summary_pre_j6_common_keeps_reportes_line(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Découvert à résorber' in html and 'Préréglage' in html
+    assert 'dont' not in html.split('Découvert à résorber')[1].split('</div>')[0]

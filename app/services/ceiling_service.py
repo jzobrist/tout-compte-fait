@@ -40,6 +40,7 @@ class CeilingReport:
     envelopes: dict = field(default_factory=dict)
     frozen: bool = False
     unabsorbed: float = 0.0
+    extra_unabsorbed: float = 0.0   # part of `unabsorbed` left by the solidarity extra cut only
     unallocated: float = None
 
 
@@ -115,7 +116,9 @@ def _common_extra_cut(result, cats, pot, bm, frozen):
         cut = min(shortfall * pct[cid] / total_pct, env.amount - env.low)
         env.amount -= cut
         absorbed += cut
-    result.unabsorbed += max(0.0, shortfall - absorbed)
+    left = max(0.0, shortfall - absorbed)
+    result.unabsorbed += left
+    result.extra_unabsorbed = left
 
 
 def dynamic_total(bm):

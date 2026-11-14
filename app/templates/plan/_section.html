@@ -1,0 +1,34 @@
+<section id="plan-section-{{ pot.id }}" class="mb-4"
+         hx-vals='{"year": {{ year }}, "month": {{ month }}}'>
+  <h5 class="fw-bold mb-3">{% if pot.kind == 'common' %}① Commun — {{ pot.name }}{% else %}② Mon perso{% endif %}</h5>
+
+  {% with oob=false %}{% include 'plan/_header.html' %}{% endwith %}
+
+  {% if pot.kind == 'common' %}{% include 'plan/_contribution.html' %}{% endif %}
+
+  {% if has_deficit %}
+  <div class="card mb-3"><div class="card-body">
+    <h6>Remise à flot</h6>
+    <form hx-post="{{ url_for('plan.settings', pot_id=pot.id) }}" hx-target="#envelopes-{{ pot.id }}" hx-swap="outerHTML"
+          hx-trigger="input delay:400ms">
+      <label class="form-label small mb-0">Étaler sur <strong id="months-label-{{ pot.id }}">{{ plan.months }}</strong> mois</label>
+      <input type="range" class="form-range" name="months" min="1" max="6" step="1" value="{{ plan.months }}"
+             oninput="document.getElementById('months-label-{{ pot.id }}').textContent=this.value">
+      {% if pot.kind == 'common' %}
+      <label class="form-label small mb-0">Partage de l'effort :
+        <strong id="split-label-{{ pot.id }}">{{ (plan.split * 100)|round|int }}</strong> % virements /
+        <strong id="split-label-env-{{ pot.id }}">{{ 100 - (plan.split * 100)|round|int }}</strong> % enveloppes</label>
+      <input type="range" class="form-range" name="split" min="0" max="100" step="5" value="{{ (plan.split * 100)|round|int }}"
+             oninput="document.getElementById('split-label-{{ pot.id }}').textContent=this.value;document.getElementById('split-label-env-{{ pot.id }}').textContent=100-this.value">
+      {% endif %}
+    </form>
+    {% with oob=false %}{% include 'plan/_summary.html' %}{% include 'plan/_transfers.html' %}{% endwith %}
+  </div></div>
+  {% else %}
+  {% with oob=false %}{% include 'plan/_summary.html' %}{% include 'plan/_transfers.html' %}{% endwith %}
+  {% endif %}
+
+  <h6>Enveloppes</h6>
+  {% with oob=false %}{% include 'plan/_envelopes.html' %}{% endwith %}
+  {% include 'plan/_personal_validation.html' %}
+</section>

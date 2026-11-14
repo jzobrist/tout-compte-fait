@@ -4,6 +4,7 @@ A plan exists per pot and budget month once the deficit has been measured. The d
 re-measured every month, so whatever was not absorbed shows up again in the next measurement.
 """
 import logging
+import math
 from dataclasses import dataclass, field
 
 from app.extensions import db
@@ -343,7 +344,10 @@ def build_view(pot, today, year=None, month=None, user=None):
                    floor=cat.min_amount or 0.0)
         env = ceilings.envelopes.get(cat.id)
         if env is not None:
-            row['slider'] = dict(min=env.low, max=env.high, value=env.amount, disabled=env.locked)
+            lo = math.ceil(round(env.low * 100, 6)) / 100
+            hi = max(lo, math.floor(round(env.high * 100, 6)) / 100)
+            row['slider'] = dict(min=lo, max=hi, disabled=env.locked,
+                                 value=min(hi, max(lo, round(env.amount, 2))))
         envelopes.append(row)
     transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
     my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)
@@ -359,6 +363,7 @@ def build_view(pot, today, year=None, month=None, user=None):
                 has_deficit=has_deficit,
                 share=monthly_share(plan) if plan is not None else 0.0,
                 envelope_part=envelope_part(plan) if has_deficit else 0.0,
+                j6=pot.kind == 'common' and cs.is_j6(pot, bm.year, bm.month),
                 report=ceilings, ceilings=ceilings, frozen=ceilings.frozen, personal=personal,
                 envelopes=envelopes, transfers=transfers, my_transfer=my_transfer,
                 my_contribution=my_contribution, contribution=contribution,

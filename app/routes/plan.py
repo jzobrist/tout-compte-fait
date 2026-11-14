@@ -9,7 +9,7 @@ from app.models import Category, Pot
 from app.services import ceiling_service, contribution_service, refloat_service, simulation_service
 from app.services.ceiling_service import CeilingError
 from app.services.contribution_service import ContributionError
-from app.services.access_service import can_access_pot, get_current_pot
+from app.services.access_service import can_access_pot
 from app.services.balance_service import EnvelopeError, close_envelope, reopen_envelope
 from app.services.budget_service import (
     current_budget_month, get_or_create_budget_month, target_budget_month,
@@ -44,12 +44,30 @@ def _month_or_400(pot, source):
     return year, month
 
 
+def _my_personal_pot():
+    """The VIEWER's personal pot: the only personal pot a page or oob block may be built from."""
+    return Pot.query.filter_by(owner_id=current_user.id, kind='personal').first()
+
+
+def _personal_oob(common_view):
+    """Out-of-band refresh of section ② from the viewer's own personal pot (never another member's)."""
+    mine = _my_personal_pot()
+    if mine is None:
+        return ''
+    view = refloat_service.build_view(mine, date.today(), common_view['year'], common_view['month'],
+                                      current_user)
+    return render_template('plan/_personal_oob.html', **view)
+
+
 def _respond(pot, fragment):
     if not request.headers.get('HX-Request'):
         return redirect(url_for('plan.index'))
     year, month = _month_or_400(pot, request.form)
     view = refloat_service.build_view(pot, date.today(), year, month, current_user)
-    return render_template(fragment, **view)
+    body = render_template(fragment, **view)
+    if pot.kind == 'common':
+        body += _personal_oob(view)
+    return body
 
 
 def _plan_or_400(pot):
@@ -76,10 +94,17 @@ def _common_or_404(pot_id):
 @plan_bp.route('')
 @login_required
 def index():
-    pot = get_current_pot()
-    year, month = _month_or_400(pot, request.args)
-    view = refloat_service.build_view(pot, date.today(), year, month, current_user)
-    return render_template('plan/index.html', **view)
+    mine = _my_personal_pot()
+    common = Pot.query.filter_by(household_id=current_user.household_id, kind='common').first()
+    if common is None or mine is None:
+        abort(404)
+    year, month = _month_or_400(common, request.args)
+    cv = refloat_service.build_view(common, date.today(), year, month, current_user)
+    pv = refloat_service.build_view(mine, date.today(), cv['year'], cv['month'], current_user)
+    return render_template('plan/index.html', balance_alerts=cv['balance_alerts'],
+                           my_contribution=pv['my_contribution'],
+                           common_html=render_template('plan/_section.html', **cv),
+                           personal_html=render_template('plan/_section.html', **pv))
 
 
 @plan_bp.route('/<int:pot_id>/settings', methods=['POST'])

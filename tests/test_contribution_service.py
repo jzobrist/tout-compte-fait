@@ -806,6 +806,7 @@ def test_shortfall_absorbed_by_auto_envelopes(db, household_clean):
     assert lowered > 0
     assert cs.shortfall(plan) == pytest.approx(0.0, abs=0.01)
     assert rep.unabsorbed == pytest.approx(0.0, abs=0.01)
+    assert rep.extra_unabsorbed == pytest.approx(0.0, abs=0.01)
 
 
 def test_simulation_need_unchanged(db, household_clean):
