@@ -104,13 +104,17 @@ def report(bm):
         brut = dynamic_brut(cat, disponible)
         bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
         closed = bmc is not None and bmc.closed_at is not None
-        # preset: whole euros, rounded DOWN (the cents stay unallocated / on the pot)
-        amount = (stored[cat.id] if cat.id in stored
-                  else float(math.floor(round(brut - cuts.cuts.get(cat.id, 0.0), 6))))
-        # effective budget = ceiling + carry_in + net adjustments: only the spending they do not
-        # already cover forces the ceiling up (same `remaining` as envelope_cuts)
         carry_in, adjustments = refloat_service.category_offsets(bm, cat, bmc)
         low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat) - carry_in - adjustments, 0.0)
+        if cat.id in stored:
+            amount = stored[cat.id]
+        else:
+            # preset: whole euros, rounded DOWN; never below `low` (then the unrounded value stays)
+            raw = brut - cuts.cuts.get(cat.id, 0.0)
+            floored = float(math.floor(round(raw, 6)))
+            amount = floored if floored >= low else raw
+        # effective budget = ceiling + carry_in + net adjustments: only the spending they do not
+        # already cover forces the ceiling up (same `remaining` as envelope_cuts)
         # No max_amount: a personal slider is only bounded by what is left to allocate (below).
         if pot.kind == 'personal':
             ceiling = cat.max_amount if cat.max_amount is not None else math.inf
@@ -155,6 +159,7 @@ def _common_extra_cut(result, cats, pot, bm, frozen):
         cut = min(shortfall * pct[cid] / total_pct, env.amount - env.low)
         new = env.amount - cut
         floored = float(math.floor(round(new, 6)))
+        # flooring may absorb up to 1 EUR more than `absorbed` counts (the surplus only helps)
         env.amount = floored if floored >= env.low else new   # whole euros when the floor allows
         absorbed += cut
     left = max(0.0, shortfall - absorbed)

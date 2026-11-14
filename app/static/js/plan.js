@@ -54,7 +54,10 @@
   document.addEventListener('htmx:oobAfterSwap', function (e) {
     var el = (e.detail && e.detail.target) || e.target;
     if (el && el.dataset && el.dataset.retainedFor) {
-      setBoth(document.getElementById('ceil-' + el.dataset.retainedFor), el.dataset.value);
+      var box = document.getElementById('ceil-' + el.dataset.retainedFor);
+      var c = controls(box);
+      if (c && document.activeElement === c.range) return;   // user is dragging again: keep their value
+      setBoth(box, el.dataset.value);
     }
   });
   document.addEventListener('htmx:load', function (e) { init(e.target); });

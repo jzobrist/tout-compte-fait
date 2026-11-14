@@ -28,6 +28,7 @@
              aria-label="Plafond {{ cat.name }} en euros"
              hx-post="{{ url }}" hx-trigger="change" hx-swap="none">
       <span class="small text-secondary">€</span>
+      <span hidden id="ceil-retained-{{ cat.id }}" data-retained-for="{{ cat.id }}"></span>
     </div>
     {% endif %}
   </div>

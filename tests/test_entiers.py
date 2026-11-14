@@ -117,7 +117,7 @@ def test_envelope_figure_shows_ceiling_without_cents(db, household_clean):
     _income(h.personal_a, 1000.0)
     html = h.client_a.get('/plan').get_data(as_text=True)
     fig = re.search(r'id="env-fig-\d+"[^>]*>([^<]*)<', html).group(1)
-    assert fig.startswith('72 € ·'), fig
+    assert fig.startswith('plafond 72 € ·'), fig
 
 
 def test_ceiling_post_returns_retained_field_but_no_slider(db, household_clean):
@@ -146,3 +146,33 @@ def test_simulation_shares_are_whole_euros(db, household_clean):
     result = sim.simulate(h.common, h.user_a, TODAY)
     assert result.error is None and result.shares
     assert all(v == int(v) for v in result.shares.values()), result.shares
+
+
+def test_envelope_figure_keeps_cents_on_budget_spent_remaining(db, household_clean):
+    h = household_clean
+    _ccat(db, h.personal_a, 'Loisirs A', pct=0.07213)
+    _income(h.personal_a, 1000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    fig = re.search(r'id="env-fig-\d+"[^>]*>([^<]*)<', html).group(1)
+    assert 'plafond 72 €' in fig and 'dépensé 0,00 €' in fig and 'reste 72,00 €' in fig
+
+
+def test_each_dynamic_envelope_has_a_retained_sink(db, household_clean):
+    h = household_clean
+    a = _ccat(db, h.personal_a, 'A', pct=0.2)
+    b = _ccat(db, h.personal_a, 'B', pct=0.3)
+    _income(h.personal_a, 1000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    for c in (a, b):
+        assert f'id="ceil-retained-{c.id}"' in html
+
+
+def test_preset_floor_never_goes_below_low(db, household_clean):
+    from tests.test_ceiling_service import _spend
+    h = household_clean
+    pot = h.personal_a
+    a = _ccat(db, pot, 'A', pct=0.0729)          # brut 72.9
+    bm = _bm(pot, 1000.0)
+    _spend(db, h, pot, a, 72.5)
+    env = ceil_s.report(bm).envelopes[a.id]
+    assert env.low >= 72.5 and env.amount >= env.low
