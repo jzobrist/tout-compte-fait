@@ -197,7 +197,7 @@ def test_ceiling_rows_unique_and_deleted_with_category(db, household_clean):
 
 
 # --- Task 4: freeze / unfreeze ---------------------------------------------------------------
-from app.models import ContributionCap, Pot, User  # noqa: E402
+from app.models import ContributionCap, ContributionShare, Pot, User  # noqa: E402
 from app.services import contribution_service as ccs  # noqa: E402
 from tests.test_contribution_service import (  # noqa: E402
     M, TODAY as CTODAY, _ceiling_setup, _common_bm, _ready, mail_outbox,
@@ -357,3 +357,41 @@ def test_single_member_household_does_not_wait(db):
     _bm(personal, 1000.0)
     cs.validate_personal(personal, 2026, 11)
     assert cs.is_frozen(personal, 2026, 11)
+
+
+def test_validate_is_atomic_with_freeze(db, household_clean, mail_outbox, monkeypatch):
+    h = household_clean
+    plan, _, _ = _ceiling_setup(db, h)
+    ccs.validate(plan, h.user_a, CTODAY)
+    real = cs.freeze
+
+    def freeze_then_boom(*a, **k):
+        real(*a, **k)
+        raise RuntimeError('boom')
+    monkeypatch.setattr(cs, 'freeze', freeze_then_boom)
+    with pytest.raises(RuntimeError):
+        ccs.validate(plan, h.user_b, CTODAY)
+    db.session.rollback()
+    assert not cs.is_frozen(h.common, *M)
+    assert ccs.get_plan(h.common, *M).status == 'draft'
+    assert ContributionShare.query.count() == 0
+
+
+def test_reopen_is_atomic_with_unfreeze(db, household_clean, mail_outbox, monkeypatch):
+    h = household_clean
+    _personal_cat(db, h)
+    _ceiling_setup(db, h)
+    plan = _validate_common(h)
+    cs.validate_personal(h.personal_a, *M)
+    real = cs.unfreeze
+
+    def unfreeze_personal_boom(pot, *a, **k):
+        if pot.kind == 'personal':
+            raise RuntimeError('boom')
+        real(pot, *a, **k)
+    monkeypatch.setattr(cs, 'unfreeze', unfreeze_personal_boom)
+    with pytest.raises(RuntimeError):
+        ccs.reopen(plan, h.user_a, CTODAY)
+    db.session.rollback()
+    assert cs.is_frozen(h.common, *M) and cs.is_frozen(h.personal_a, *M)
+    assert ccs.get_plan(h.common, *M).status == 'validated'

@@ -161,7 +161,7 @@ def _upsert_plan(pot, year, month):
     return plan
 
 
-def freeze(pot, year, month):
+def freeze(pot, year, month, commit=True):
     """Store the current amount of EVERY dynamic envelope and mark the month validated.
     No recalculation: the amounts are the ones already allocated."""
     bm = get_or_create_budget_month(pot.id, year, month)
@@ -174,16 +174,18 @@ def freeze(pot, year, month):
         else:
             db.session.add(EnvelopeCeiling(plan_id=plan.id, category_id=cid, amount=amount))
     plan.validated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.session.commit()
+    if commit:
+        db.session.commit()
 
 
-def unfreeze(pot, year, month):
+def unfreeze(pot, year, month, commit=True):
     """Reopen the month; the stored amounts stay (they become sliders). No recalculation."""
     plan = get_plan(pot, year, month)
     if plan is None:
         return
     plan.validated_at = None
-    db.session.commit()
+    if commit:
+        db.session.commit()
 
 
 def personal_waiting(pot, year, month):
