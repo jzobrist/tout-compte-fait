@@ -8,6 +8,8 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
+    # token valid for the whole session: a page left open > 1 h must keep saving (htmx sliders)
+    WTF_CSRF_TIME_LIMIT = None
     # Fernet key encrypting bank secrets; None in dev if unset (encrypt/decrypt then raise SecretsError)
     BANK_SECRETS_KEY = os.environ.get('BANK_SECRETS_KEY')
     # Bank sync callback URL; when unset, derived from the request (url_for bank.callback)
