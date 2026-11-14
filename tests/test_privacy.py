@@ -240,8 +240,8 @@ def _j6_secret_household(h):
                                 balance_value=0.0, balance_at=datetime.datetime(2026, 6, 15, 6, 0)))
     _db.session.add_all([
         Category(name='Loyer', type='fixed_amount', amount=2400.0, pot_id=h.common.id, carry_over=False),
-        # 20% only: need < sum of bases, so the equal reste a vivre R is > 0
-        Category(name='Courses', type='dynamic', percentage=0.2, pot_id=h.common.id, carry_over=False),
+        # 25% only: need < sum of bases, so the equal reste a vivre R is > 0
+        Category(name='Courses', type='dynamic', percentage=0.25, pot_id=h.common.id, carry_over=False),
         Category(name='Prêt secret', type='fixed_amount', amount=CHARGE_A, constrained=True,
                  pot_id=h.personal_a.id, carry_over=False),
         Category(name='Crédit auto B', type='fixed_amount', amount=CHARGE_B, constrained=True,

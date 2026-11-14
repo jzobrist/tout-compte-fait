@@ -327,8 +327,8 @@ def build_view(pot, today, year=None, month=None, user=None):
         recalculate_budget_month(bm)
     plan = ensure_plan(pot, bm, today)
     has_deficit = plan is not None and plan.deficit > 0
-    report = envelope_cuts(plan, bm) if plan is not None else CutReport()
-    disponible = pot_disponible(bm)
+    from app.services import ceiling_service
+    ceilings = ceiling_service.report(bm)
     order = {'dynamic': 0, 'fixed_amount': 1, 'fixed_auto': 1}
     cats = sorted(Category.query.filter_by(pot_id=pot.id).all(),
                   key=lambda c: (order.get(c.type, 2), c.name.lower()))
@@ -341,18 +341,25 @@ def build_view(pot, today, year=None, month=None, user=None):
                    remaining=category_remaining(bm, cat),
                    closed=bmc is not None and bmc.closed_at is not None,
                    floor=cat.min_amount or 0.0)
+        env = ceilings.envelopes.get(cat.id)
+        if env is not None:
+            row['slider'] = dict(min=env.low, max=env.high, value=env.amount, disabled=env.locked)
         envelopes.append(row)
     transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
     my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)
     my_contribution = _my_contribution(pot, bm.year, bm.month) if pot.kind == 'personal' else None
     contribution = (_contribution_view(pot, today, bm, j6_plan, requested, user)
                     if pot.kind == 'common' else None)
+    personal = (dict(waiting=ceiling_service.personal_waiting(pot, bm.year, bm.month),
+                     validated=ceilings.frozen, unallocated=ceilings.unallocated)
+                if pot.kind == 'personal' else None)
     from app.services.alert_service import alert_types_for
     fm = free_money(pot, bm)
     return dict(pot=pot, bm=bm, fm=fm, balance_alerts=alert_types_for(pot, fm), plan=plan,
                 has_deficit=has_deficit,
                 share=monthly_share(plan) if plan is not None else 0.0,
                 envelope_part=envelope_part(plan) if has_deficit else 0.0,
-                report=report, envelopes=envelopes, transfers=transfers, my_transfer=my_transfer,
+                report=ceilings, ceilings=ceilings, frozen=ceilings.frozen, personal=personal,
+                envelopes=envelopes, transfers=transfers, my_transfer=my_transfer,
                 my_contribution=my_contribution, contribution=contribution,
                 year=bm.year, month=bm.month)

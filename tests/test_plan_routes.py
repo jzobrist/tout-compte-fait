@@ -467,3 +467,97 @@ def test_simulation_input_keeps_exact_amount(db, household_clean, frozen_today):
     h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={
         f'salary_{h.user_a.id}': '3000', f'salary_{h.user_b.id}': '12345.67'})
     assert sim.forecasts(h.user_a)[h.user_b.id] == 12345.67
+
+
+# --- plafonds figés: ceiling slider, personal validate/reopen -------------------------------
+
+def _ceiling_url(pot, cat):
+    return f'/plan/{pot.id}/ceiling/{cat.id}'
+
+
+def test_ceiling_route_updates_and_returns_figures(db, household_clean):
+    from app.models import EnvelopeCeiling
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'name="amount"' in page and 'delay:400ms' in page
+    resp = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '<input type="range"' not in body and 'hx-swap-oob' in body
+    row = EnvelopeCeiling.query.filter_by(category_id=culture.id).one()
+    assert row.amount == 120.0
+
+
+def test_ceiling_route_rejects(db, household_clean):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    rent = Category.query.filter_by(pot_id=h.common.id, name='Loyer').one()
+    url = _ceiling_url(h.common, culture)
+    post = lambda u, **d: h.client_a.post(u, data=d, headers=HX).status_code
+    assert post(url, amount='nan') == 400
+    assert post(url, amount='inf') == 400
+    assert post(url) == 400
+    assert post(url, amount='abc') == 400
+    assert post(_ceiling_url(h.common, rent), amount='10') == 400   # fixed category
+    # negative: clamped to the low bound
+    assert post(url, amount='-5') == 200
+    env = cs.report(current_budget_month(h.common, date.today())).envelopes[culture.id]
+    assert env.amount == env.low
+    # closed envelope
+    h.client_a.post(f'/plan/{h.common.id}/envelope/{courses.id}/close', headers=HX)
+    assert post(_ceiling_url(h.common, courses), amount='300') == 400
+    # frozen month
+    bm = current_budget_month(h.common, date.today())
+    cs.freeze(h.common, bm.year, bm.month)
+    assert post(url, amount='50') == 400
+
+
+def test_ceiling_route_partner_personal_pot_404(db, household_clean):
+    h = household_clean
+    cat = _cat(db, h.personal_a, 'Loisirs', pct=0.5)
+    _income(h.personal_a, 1000.0)
+    assert h.client_b.post(_ceiling_url(h.personal_a, cat), data={'amount': '10'},
+                           headers=HX).status_code == 404
+    assert h.client_b.post(f'/plan/{h.personal_a.id}/ceilings/validate', headers=HX).status_code == 404
+    assert h.client_b.post(f'/plan/{h.personal_a.id}/ceilings/reopen', headers=HX).status_code == 404
+
+
+def test_personal_validate_route_waiting_400_then_ok(db, household_clean, monkeypatch):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    _cat(db, h.personal_a, 'Loisirs', pct=0.5)
+    _income(h.personal_a, 1000.0)
+    _select(h.client_a, h.personal_a)
+    base = f'/plan/{h.personal_a.id}/ceilings'
+    monkeypatch.setattr(cs, 'personal_waiting', lambda *a: True)
+    assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400
+    monkeypatch.undo()
+    resp = h.client_a.post(f'{base}/validate', headers=HX)
+    assert resp.status_code == 200
+    assert 'id="envelopes"' in resp.get_data(as_text=True)
+    bm = current_budget_month(h.personal_a, date.today())
+    assert cs.is_frozen(h.personal_a, bm.year, bm.month)
+    assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400   # already frozen
+    assert h.client_a.post(f'{base}/reopen', headers=HX).status_code == 200
+    assert not cs.is_frozen(h.personal_a, bm.year, bm.month)
+    assert h.client_a.post(f'{base}/reopen', headers=HX).status_code == 400     # not frozen
+
+
+def test_personal_validate_on_common_pot_404(db, household_clean):
+    h = household_clean
+    for path in ('ceilings/validate', 'ceilings/reopen'):
+        assert h.client_a.post(f'/plan/{h.common.id}/{path}', headers=HX).status_code == 404
+
+
+def test_settings_refused_when_frozen(db, household_clean):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    h.client_a.get('/plan')
+    bm = current_budget_month(h.common, date.today())
+    cs.freeze(h.common, bm.year, bm.month)
+    resp = h.client_a.post(f'/plan/{h.common.id}/settings', headers=HX,
+                           data={'months': '3', 'split': '70'})
+    assert resp.status_code == 400

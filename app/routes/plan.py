@@ -6,7 +6,8 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import Category, Pot
-from app.services import contribution_service, refloat_service, simulation_service
+from app.services import ceiling_service, contribution_service, refloat_service, simulation_service
+from app.services.ceiling_service import CeilingError
 from app.services.contribution_service import ContributionError
 from app.services.access_service import can_access_pot, get_current_pot
 from app.services.balance_service import EnvelopeError, close_envelope, reopen_envelope
@@ -88,7 +89,10 @@ def settings(pot_id):
     plan = _plan_or_400(pot)
     months = request.form.get('months', type=int) or plan.months
     split = request.form.get('split', type=int)
-    refloat_service.set_settings(plan, months, split / 100 if split is not None else None)
+    try:
+        refloat_service.set_settings(plan, months, split / 100 if split is not None else None)
+    except CeilingError:
+        abort(400)
     return _respond(pot, 'plan/_envelopes_response.html')
 
 
@@ -227,3 +231,49 @@ def simulation(pot_id):
         return redirect(url_for('plan.index'))
     return render_template('plan/_simulation_result.html',
                            s=refloat_service.simulation_view(pot, date.today(), current_user))
+
+
+@plan_bp.route('/<int:pot_id>/ceiling/<int:category_id>', methods=['POST'])
+@login_required
+def ceiling(pot_id, category_id):
+    pot = _pot_or_404(pot_id)
+    cat = _category_or_404(pot, category_id)
+    year, month = _month_or_400(pot, request.form)
+    if year is None:
+        bm = current_budget_month(pot, date.today())
+        year, month = bm.year, bm.month
+    amount = request.form.get('amount', type=float)
+    if amount is None or not math.isfinite(amount):
+        abort(400)
+    try:
+        ceiling_service.set_ceiling(pot, year, month, cat, amount)
+    except (ValueError, CeilingError):
+        abort(400)
+    return _respond(pot, 'plan/_figures.html')
+
+
+def _personal_toggle(pot_id, action):
+    pot = _pot_or_404(pot_id)
+    if pot.kind != 'personal':
+        abort(404)
+    year, month = _month_or_400(pot, request.form)
+    if year is None:
+        bm = current_budget_month(pot, date.today())
+        year, month = bm.year, bm.month
+    try:
+        action(pot, year, month)
+    except (ValueError, CeilingError):
+        abort(400)
+    return _respond(pot, 'plan/_personal_response.html')
+
+
+@plan_bp.route('/<int:pot_id>/ceilings/validate', methods=['POST'])
+@login_required
+def ceilings_validate(pot_id):
+    return _personal_toggle(pot_id, ceiling_service.validate_personal)
+
+
+@plan_bp.route('/<int:pot_id>/ceilings/reopen', methods=['POST'])
+@login_required
+def ceilings_reopen(pot_id):
+    return _personal_toggle(pot_id, ceiling_service.reopen_personal)
