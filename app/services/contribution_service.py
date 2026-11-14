@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
@@ -109,6 +110,23 @@ def split_with_caps(bases, need, caps):
             remaining = round(remaining - shares[u], 2)
             del active[u]
     return shares, adjusted, round(max(remaining, 0.0), 2)
+
+
+def round_shares(shares, caps):
+    """Transfers in whole euros, rounded UP (the extra euros stay on the common pot). A capped
+    member never goes above the cap (min(ceil, cap)); a share at 0 stays 0. ONE place for the
+    real plan and the simulation; shortfall/adjusted are computed from the unrounded split."""
+    out = {}
+    for uid, share in shares.items():
+        if share <= 0:
+            out[uid] = 0.0
+            continue
+        value = float(math.ceil(round(share, 6)))
+        cap = caps.get(uid)
+        if cap is not None:
+            value = min(value, round(float(max(cap, 0.0)), 2))
+        out[uid] = value
+    return out
 
 
 def shortfall_from_split(bases, shares, uncovered):
@@ -418,9 +436,15 @@ def caps(plan):
     return {c.user_id: c.cap for c in plan.caps}
 
 
-def split(plan):
-    """(shares, adjusted, uncovered) of the live plan, caps included."""
+def split_raw(plan):
+    """(shares, adjusted, uncovered) of the live plan, caps included, in cents (unrounded)."""
     return split_with_caps(bases(plan), need(plan).total, caps(plan))
+
+
+def split(plan):
+    """Like `split_raw` with the shares rounded up to the euro (what members transfer)."""
+    shares_, adjusted_, uncovered = split_raw(plan)
+    return round_shares(shares_, caps(plan)), adjusted_, uncovered
 
 
 def shares(plan):
@@ -431,7 +455,7 @@ def shares(plan):
 
 def adjusted(plan):
     """True when a solidarity cap changed the shares (frozen once validated)."""
-    return plan.solidarity_adjusted if plan.status == 'validated' else split(plan)[1]
+    return plan.solidarity_adjusted if plan.status == 'validated' else split_raw(plan)[1]
 
 
 def expected_contributions(pot, year, month):
@@ -441,7 +465,7 @@ def expected_contributions(pot, year, month):
 
 
 def shortfall(plan):
-    shares_, _, uncovered = split(plan)
+    shares_, _, uncovered = split_raw(plan)
     return shortfall_from_split(bases(plan), shares_, uncovered)
 
 

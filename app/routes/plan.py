@@ -280,7 +280,14 @@ def ceiling(pot_id, category_id):
         ceiling_service.set_ceiling(pot, year, month, cat, amount)
     except (ValueError, CeilingError):
         abort(400)
-    return _respond(pot, 'plan/_figures.html')
+    body = _respond(pot, 'plan/_figures.html')
+    if not isinstance(body, str):
+        return body
+    # the amount actually stored (the server clamps): refreshes the number field and the slider,
+    # which are never re-rendered themselves
+    retained = ceiling_service.report(get_or_create_budget_month(pot.id, year, month)).envelopes[cat.id].amount
+    return body + render_template('plan/_env_retained.html', category_id=cat.id,
+                                  amount=int(round(retained)))
 
 
 def _personal_toggle(pot_id, action):

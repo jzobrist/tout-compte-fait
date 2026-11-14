@@ -1,9 +1,11 @@
+import re
 import sys
 from datetime import date, datetime
 
 import pytest
 
 from app.models import BankAccount, BudgetMonthCategory, Category, RefloatPlan
+from app.services import contribution_service as cs
 from app.services.budget_service import (
     current_budget_month, get_or_create_budget_month, recalculate_budget_month,
 )
@@ -763,3 +765,60 @@ def test_j6_slider_and_validation_refresh_arrow_amount(db, household_clean, froz
     assert 'provisoire' in arrow(r.get_data(as_text=True))
     r = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
     assert 'validé' in arrow(h.client_a.get('/plan').get_data(as_text=True))
+
+
+# --- barre collante des virements proposés (montants entiers) -------------------------------
+
+def _j6_common(db, h, frozen_today):
+    y, m = _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.25)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    return y, m
+
+
+def test_transfers_bar_on_plan_for_both_members(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_common(db, h, frozen_today)
+    plan = cs.get_plan(h.common, y, m)
+    assert plan is not None
+    amounts = cs.shares(plan)
+    assert all(v == int(v) for v in amounts.values())
+    for client in (h.client_a, h.client_b):
+        html = client.get('/plan').get_data(as_text=True)
+        assert 'id="transfers-bar-' in html
+        bar = html[html.index('id="transfers-bar-'):]
+        bar = bar[:bar.index('</div>')]
+        assert 'provisoire' in bar
+        for u in (h.user_a, h.user_b):
+            assert u.display_name in bar
+            assert f'{int(amounts[u.id]):,}'.replace(',', ' ') + ' €' in bar
+        # in the common section, before section ②
+        assert html.index('id="transfers-bar-') < html.index('② Mon perso')
+
+
+def test_transfers_bar_absent_without_plan(db, household_clean):
+    h = household_clean
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Virements proposés' not in html
+
+
+def test_transfers_bar_refreshed_oob_in_ceiling_response_and_validated(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_common(db, h, frozen_today)
+    cat = Category.query.filter_by(pot_id=h.common.id, name='Courses').one()
+    body = h.client_a.post(_ceiling_url(h.common, cat), data={'amount': '300'}, headers=HX).get_data(as_text=True)
+    m = re.search(r'<div[^>]*id="transfers-bar-\d+"[^>]*>', body)
+    assert m and 'hx-swap-oob' in m.group(0)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX).get_data(as_text=True)
+    assert 'id="transfers-bar-' in r and 'validé' in r[r.index('id="transfers-bar-'):][:600]
+
+
+def test_transfers_bar_has_no_personal_figures(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_common(db, h, frozen_today)
+    html = h.client_b.get('/plan').get_data(as_text=True)
+    bar = html[html.index('id="transfers-bar-'):]
+    bar = bar[:bar.index('</div>')]
+    assert '4321' not in bar and '4 321' not in bar and 'Loisirs A' not in bar

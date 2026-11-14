@@ -104,11 +104,17 @@ def report(bm):
         brut = dynamic_brut(cat, disponible)
         bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
         closed = bmc is not None and bmc.closed_at is not None
-        amount = stored[cat.id] if cat.id in stored else brut - cuts.cuts.get(cat.id, 0.0)
-        # effective budget = ceiling + carry_in + net adjustments: only the spending they do not
-        # already cover forces the ceiling up (same `remaining` as envelope_cuts)
         carry_in, adjustments = refloat_service.category_offsets(bm, cat, bmc)
         low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat) - carry_in - adjustments, 0.0)
+        if cat.id in stored:
+            amount = stored[cat.id]
+        else:
+            # preset: whole euros, rounded DOWN; never below `low` (then the unrounded value stays)
+            raw = brut - cuts.cuts.get(cat.id, 0.0)
+            floored = float(math.floor(round(raw, 6)))
+            amount = floored if floored >= low else raw
+        # effective budget = ceiling + carry_in + net adjustments: only the spending they do not
+        # already cover forces the ceiling up (same `remaining` as envelope_cuts)
         # No max_amount: a personal slider is only bounded by what is left to allocate (below).
         if pot.kind == 'personal':
             ceiling = cat.max_amount if cat.max_amount is not None else math.inf
@@ -151,7 +157,10 @@ def _common_extra_cut(result, cats, pot, bm, frozen):
     for cid in eligible:
         env = result.envelopes[cid]
         cut = min(shortfall * pct[cid] / total_pct, env.amount - env.low)
-        env.amount -= cut
+        new = env.amount - cut
+        floored = float(math.floor(round(new, 6)))
+        # flooring may absorb up to 1 EUR more than `absorbed` counts (the surplus only helps)
+        env.amount = floored if floored >= env.low else new   # whole euros when the floor allows
         absorbed += cut
     left = max(0.0, shortfall - absorbed)
     result.unabsorbed += left
@@ -184,6 +193,7 @@ def set_ceiling(pot, year, month, category, amount):
     # high wins over low if they ever cross (personal room smaller than the spending to cover):
     # a ceiling is never stored above what is left to allocate.
     amount = min(env.high, max(env.low, float(amount)))
+    amount = _whole_euros(amount, env.low, env.high)
     plan = _upsert_plan(pot, year, month)
     row = next((c for c in plan.ceilings if c.category_id == category.id), None)
     if row is None:
@@ -192,6 +202,16 @@ def set_ceiling(pot, year, month, category, amount):
         row.amount = amount
     db.session.commit()
     _recalculate(pot, year, month)
+
+
+def _whole_euros(amount, low, high):
+    """Nearest euro of a clamped amount, kept inside [low, high] (high wins if they cross)."""
+    value = float(round(amount))
+    if value > high:
+        value = float(math.floor(round(high, 6)))
+    if value < low:
+        value = float(math.ceil(round(low, 6)))
+    return value if value <= high else min(high, amount)
 
 
 def _upsert_plan(pot, year, month):

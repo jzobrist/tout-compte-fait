@@ -351,10 +351,12 @@ def build_view(pot, today, year=None, month=None, user=None):
                    floor=cat.min_amount or 0.0)
         env = ceilings.envelopes.get(cat.id)
         if env is not None:
-            lo = math.ceil(round(env.low * 100, 6)) / 100
-            hi = max(lo, math.floor(round(env.high * 100, 6)) / 100)
+            # whole euros, step 1: min = ceil(low), max = floor(high); crossed bounds = the amount
+            lo, hi = math.ceil(round(env.low, 6)), math.floor(round(env.high, 6))
+            if lo > hi:
+                lo = hi = round(env.amount)
             row['slider'] = dict(min=lo, max=hi, disabled=env.locked,
-                                 value=min(hi, max(lo, round(env.amount, 2))))
+                                 value=min(hi, max(lo, round(env.amount))))
         envelopes.append(row)
     transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
     my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)

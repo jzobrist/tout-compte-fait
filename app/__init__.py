@@ -120,6 +120,11 @@ def create_app(config_name=None):
         value = round(value, 2) + 0.0  # + 0.0 turns -0.0 into 0.0 (no « -0,00 »)
         return f"{value:,.2f}".replace(',', ' ').replace('.', ',')
 
+    @app.template_filter('euros')
+    def euros_filter(value):
+        """Whole euros, no cents (ceilings and transfers): 1241.0 -> « 1 241 »."""
+        return f"{int(round(value + 0.0)):,}".replace(',', ' ')
+
     if not app.testing:
         from .services.alert_service import run_daily_alerts
         scheduler.add_job(run_daily_alerts, 'cron', hour=8, args=[app])

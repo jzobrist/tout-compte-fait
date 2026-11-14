@@ -9,19 +9,28 @@
         {% if row.floor %}<span class="small text-secondary">plancher {{ row.floor|money }} €</span>{% endif %}
         {% if row.closed %}<span class="badge bg-secondary">close</span>{% endif %}
         <div>{% with oob=false %}{% include 'plan/_env_fig.html' %}{% endwith %}</div>
-        {% if row.slider %}
-        <input type="range" class="form-range" name="amount" step="0.01"
-               min="{{ row.slider.min }}" max="{{ row.slider.max }}" value="{{ row.slider.value }}"
-               {% if row.slider.disabled %}disabled{% endif %}
-               aria-label="Plafond {{ cat.name }}"
-               hx-post="{{ url_for('plan.ceiling', pot_id=pot.id, category_id=cat.id) }}"
-               hx-trigger="input changed delay:400ms" hx-swap="none">
-        {% endif %}
       </div>
       <button class="btn btn-sm btn-outline-secondary"
               hx-post="{{ url_for('plan.' ~ ('reopen' if row.closed else 'close'), pot_id=pot.id, category_id=cat.id) }}"
               hx-target="#envelopes-{{ pot.id }}" hx-swap="outerHTML">{{ 'Rouvrir' if row.closed else 'Clore' }}</button>
     </div>
+    {% if row.slider %}
+    {% set url = url_for('plan.ceiling', pot_id=pot.id, category_id=cat.id) %}
+    <div class="ceiling-row" id="ceil-{{ cat.id }}">
+      <input type="range" class="form-range ceiling-range" name="amount" step="1"
+             min="{{ row.slider.min }}" max="{{ row.slider.max }}" value="{{ row.slider.value }}"
+             {% if row.slider.disabled %}disabled{% endif %}
+             aria-label="Plafond {{ cat.name }}"
+             hx-post="{{ url }}" hx-trigger="change" hx-swap="none">
+      <input type="number" class="form-control form-control-sm ceiling-field" name="amount" step="1" inputmode="numeric"
+             min="{{ row.slider.min }}" max="{{ row.slider.max }}" value="{{ row.slider.value }}"
+             {% if row.slider.disabled %}disabled{% endif %}
+             aria-label="Plafond {{ cat.name }} en euros"
+             hx-post="{{ url }}" hx-trigger="change" hx-swap="none">
+      <span class="small text-secondary">€</span>
+      <span hidden id="ceil-retained-{{ cat.id }}" data-retained-for="{{ cat.id }}"></span>
+    </div>
+    {% endif %}
   </div>
   {% else %}
   <p class="text-secondary small">Aucune enveloppe.</p>
