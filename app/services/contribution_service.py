@@ -388,14 +388,16 @@ class Need:
                 - self.surplus - self.incomes)
 
 
-def need_for(common, year, month, bases, position, allocations, refloat_v):
+def need_for(common, year, month, bases, position, allocations, refloat_v, dynamic=None):
     """Need of the common pot for month M from explicit inputs (shared by the real plan and
-    the simulation). bases: {user_id: base}."""
+    the simulation). bases: {user_id: base}. dynamic=None: Σ dynamic brut (simulation);
+    otherwise the envelopes' total (ceilings)."""
     bm = BudgetMonth.query.filter_by(pot_id=common.id, year=year, month=month).first()
     fixed = _common_fixed(common)
     disponible = max(0.0, sum(bases.values()) - fixed)
-    dynamic = sum(dynamic_brut(c, disponible) for c in
-                  Category.query.filter_by(pot_id=common.id, type='dynamic'))
+    if dynamic is None:
+        dynamic = sum(dynamic_brut(c, disponible) for c in
+                      Category.query.filter_by(pot_id=common.id, type='dynamic'))
     return Need(fixed=fixed, dynamic=dynamic, allocations=allocations, refloat_v=refloat_v,
                 surplus=max(0.0, position), incomes=float(bm.total_income or 0.0) if bm is not None else 0.0)
 
@@ -403,9 +405,13 @@ def need_for(common, year, month, bases, position, allocations, refloat_v):
 def need(plan):
     from app.services.refloat_service import get_plan as get_refloat, monthly_share
     rplan = get_refloat(plan.pot, plan.year, plan.month)
-    v = monthly_share(rplan) * rplan.split if rplan is not None else 0.0
+    v = monthly_share(rplan) if rplan is not None else 0.0
+    from app.services import ceiling_service
+    bm = BudgetMonth.query.filter_by(pot_id=plan.pot_id, year=plan.year, month=plan.month).first()
+    # no budget month yet (never created by a read): fall back to Σ brut
+    dynamic = ceiling_service.dynamic_total(bm) if bm is not None else None
     return need_for(plan.pot, plan.year, plan.month, bases(plan), plan.position,
-                    sum(a.amount for a in plan.allocations), v)
+                    sum(a.amount for a in plan.allocations), v, dynamic=dynamic)
 
 
 def caps(plan):
@@ -436,6 +442,17 @@ def expected_contributions(pot, year, month):
 
 def shortfall(plan):
     shares_, _, uncovered = split(plan)
+    return shortfall_from_split(bases(plan), shares_, uncovered)
+
+
+def shortfall_with_dynamic(plan, dynamic):
+    """Like `shortfall` but with an explicit envelopes total (never calls the ceiling service)."""
+    from app.services.refloat_service import get_plan as get_refloat, monthly_share
+    rplan = get_refloat(plan.pot, plan.year, plan.month)
+    v = monthly_share(rplan) if rplan is not None else 0.0
+    total = need_for(plan.pot, plan.year, plan.month, bases(plan), plan.position,
+                     sum(a.amount for a in plan.allocations), v, dynamic=dynamic).total
+    shares_, _, uncovered = split_with_caps(bases(plan), total, caps(plan))
     return shortfall_from_split(bases(plan), shares_, uncovered)
 
 

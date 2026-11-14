@@ -221,7 +221,8 @@ def test_need_refloat_uses_uncut_budgets(db, household_clean):
     plan = _ready(db, h, balance=-600.0)
     bm = get_or_create_budget_month(h.common.id, *M)
     n = cs.need(plan)
-    assert n.dynamic == pytest.approx(2000.0) and n.refloat_v == 300.0
+    # dynamic = Σ envelope ceilings (brut − the 300 auto cut); repayment is the full 600
+    assert n.dynamic == pytest.approx(1700.0) and n.refloat_v == 600.0
     assert n.total == pytest.approx(1000.0 + 2000.0 + 300.0)
     assert _base_of(bm, loisirs) == pytest.approx(2000.0 - 300.0)
     assert sum(cs.shares(plan).values()) == pytest.approx(n.total)
@@ -729,3 +730,97 @@ def test_j4_previous_month_contribution_still_subtracted(db, household_clean):
     classify(_credit(db, h, 700.0, day=date(2026, 11, 2)), h.user_a, 'contribution',
              contributor=h.user_a)
     assert cs._month_flows_in_balance(h.common, 2026, 11) == pytest.approx(700.0)
+
+
+# --- Plafonds figés, Task 3: common need from ceilings ---------------------------------------
+from app.models import ContributionCap  # noqa: E402
+from app.services import ceiling_service  # noqa: E402
+
+
+def _ceiling_setup(db, h):
+    """Rent 2400, Loisirs/Vacances 10 % each, deficit 300 over 1 month, split 1/3."""
+    _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=2400.0)
+    loisirs = _ccat(db, h.common, 'Loisirs', pct=0.1)
+    vacances = _ccat(db, h.common, 'Vacances', pct=0.1)
+    plan = _ready(db, h)
+    rplan = rs.get_plan(h.common, *M)
+    if rplan is None:
+        rplan = RefloatPlan(pot_id=h.common.id, year=2026, month=11)
+        db.session.add(rplan)
+    rplan.deficit, rplan.months, rplan.split = 300.0, 1, 1 / 3
+    db.session.commit()
+    cs.recalculate_household(h.common, *M)
+    return plan, loisirs, vacances
+
+
+def _common_bm(h):
+    return get_or_create_budget_month(h.common.id, *M)
+
+
+def _sum_shares(plan):
+    return sum(cs.shares(plan).values())
+
+
+def test_need_equals_old_formula_at_preset(db, household_clean):
+    h = household_clean
+    plan, _, _ = _ceiling_setup(db, h)
+    n = cs.need(plan)
+    assert n.refloat_v == pytest.approx(300.0)
+    assert n.total == pytest.approx(2400.0 + 520.0 + 300.0 * (1 / 3) - n.surplus - n.incomes)
+
+
+def test_lowering_ceiling_lowers_shares_not_repayment(db, household_clean):
+    h = household_clean
+    plan, loisirs, _ = _ceiling_setup(db, h)
+    before = _sum_shares(plan)
+    amount = ceiling_service.report(_common_bm(h)).envelopes[loisirs.id].amount
+    ceiling_service.set_ceiling(h.common, *M, loisirs, amount - 50)
+    assert _sum_shares(plan) == pytest.approx(before - 50)
+    assert cs.need(plan).refloat_v == pytest.approx(300.0)
+
+
+def test_raising_ceiling_raises_shares(db, household_clean):
+    h = household_clean
+    plan, loisirs, _ = _ceiling_setup(db, h)
+    before = _sum_shares(plan)
+    env = ceiling_service.report(_common_bm(h)).envelopes[loisirs.id]
+    ceiling_service.set_ceiling(h.common, *M, loisirs, 260.0)
+    assert _sum_shares(plan) == pytest.approx(before + (260.0 - env.amount))
+    assert 260.0 - env.amount > 0
+
+
+def test_shortfall_absorbed_by_auto_envelopes(db, household_clean):
+    h = household_clean
+    plan, loisirs, vacances = _ceiling_setup(db, h)
+    amounts = {c.id: ceiling_service.report(_common_bm(h)).envelopes[c.id].amount
+               for c in (loisirs, vacances)}
+    for cap in plan.caps:
+        db.session.delete(cap)
+    db.session.flush()
+    db.session.add_all([ContributionCap(plan_id=plan.id, user_id=h.user_a.id, cap=None),
+                        ContributionCap(plan_id=plan.id, user_id=h.user_b.id, cap=0.0)])
+    db.session.commit()
+    db.session.refresh(plan)
+    rep = ceiling_service.report(_common_bm(h))
+    lowered = sum(amounts.values()) - sum(rep.envelopes[c].amount for c in amounts)
+    assert lowered > 0
+    assert cs.shortfall(plan) == pytest.approx(0.0, abs=0.01)
+    assert rep.unabsorbed == pytest.approx(0.0, abs=0.01)
+
+
+def test_simulation_need_unchanged(db, household_clean):
+    h = household_clean
+    plan, _, _ = _ceiling_setup(db, h)
+    n = cs.need_for(h.common, *M, cs.bases(plan), plan.position, 0.0, 100.0)
+    assert n.dynamic == pytest.approx(520.0)
+    assert n.total == pytest.approx(2400.0 + 520.0 + 100.0 - n.surplus - n.incomes)
+
+
+def test_common_ceiling_high_bound(db, household_clean):
+    h = household_clean
+    _, loisirs, vacances = _ceiling_setup(db, h)
+    vacances.max_amount = 400.0
+    db.session.commit()
+    env = ceiling_service.report(_common_bm(h)).envelopes
+    assert env[loisirs.id].high == pytest.approx(520.0)      # 2 × brut 260
+    assert env[vacances.id].high == pytest.approx(800.0)     # 2 × max_amount

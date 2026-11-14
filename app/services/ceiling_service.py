@@ -18,6 +18,8 @@ from app.services.budget_service import (
 )
 from app.services.refloat_service import CutReport, envelope_cuts, monthly_share
 
+EPS = 0.005
+
 
 class CeilingError(Exception):
     """str(e) in {'frozen', 'locked', 'waiting', 'not_frozen'}."""
@@ -69,12 +71,19 @@ def report(bm):
         amount = stored[cat.id] if cat.id in stored else brut - cuts.cuts.get(cat.id, 0.0)
         low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat))
         # No max_amount: a personal slider is only bounded by what is left to allocate (below).
-        ceiling = cat.max_amount if cat.max_amount is not None else (
-            math.inf if pot.kind == 'personal' else brut)
-        high = max(ceiling, amount)
+        if pot.kind == 'personal':
+            ceiling = cat.max_amount if cat.max_amount is not None else math.inf
+        else:
+            # common pot: a slider may go up to twice the envelope's natural size
+            ceiling = 2 * max(brut, cat.max_amount or 0.0)
+        high = max(ceiling, amount, low)
         result.envelopes[cat.id] = Envelope(amount=amount, auto=cat.id not in stored,
                                             low=low, high=high, locked=frozen or closed)
-    # Task 3: common extra pass goes here (single place, before the personal unallocated bound).
+    if pot.kind == 'common':
+        _common_extra_cut(result, cats, pot, bm, frozen)
+        for env in result.envelopes.values():
+            if env.locked:
+                env.high = env.amount
     if pot.kind == 'personal':
         share = monthly_share(rplan) if has_deficit else 0.0
         result.unallocated = disponible - share - sum(e.amount for e in result.envelopes.values())
@@ -83,6 +92,29 @@ def report(bm):
             env.high = (max(env.amount, min(env.high, env.amount + room)) if not env.locked
                         else min(env.high, env.amount))
     return result
+
+
+def _common_extra_cut(result, cats, pot, bm, frozen):
+    """Shortfall left by the solidarity caps lowers the auto, unlocked envelopes (one pass,
+    prorata of percentage, within amount - low); what cannot be absorbed goes to `unabsorbed`."""
+    from app.services import contribution_service as cs
+    cplan = cs.get_plan(pot, bm.year, bm.month)
+    if cplan is None or cplan.status == 'validated' or frozen:
+        return
+    shortfall = cs.shortfall_with_dynamic(cplan, sum(e.amount for e in result.envelopes.values()))
+    if shortfall <= EPS:
+        return
+    pct = {c.id: (c.percentage or 0.0) for c in cats}
+    eligible = [cid for cid, e in result.envelopes.items()
+                if e.auto and not e.locked and e.amount - e.low > EPS and pct[cid] > 0]
+    total_pct = sum(pct[cid] for cid in eligible)
+    absorbed = 0.0
+    for cid in eligible:
+        env = result.envelopes[cid]
+        cut = min(shortfall * pct[cid] / total_pct, env.amount - env.low)
+        env.amount -= cut
+        absorbed += cut
+    result.unabsorbed += max(0.0, shortfall - absorbed)
 
 
 def dynamic_total(bm):
