@@ -5,6 +5,7 @@ refloat auto cut); a stored row is a slider the member moved. Once the month is 
 (`EnvelopePlan.validated_at`) everything is frozen.
 """
 import math
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from app.extensions import db
@@ -141,17 +142,79 @@ def set_ceiling(pot, year, month, category, amount):
     if env.locked:
         raise CeilingError('locked')
     amount = min(env.high, max(env.low, float(amount)))
-    plan = get_plan(pot, year, month)
-    if plan is None:
-        plan = EnvelopePlan(pot_id=pot.id, year=year, month=month)
-        db.session.add(plan)
-        db.session.flush()
+    plan = _upsert_plan(pot, year, month)
     row = next((c for c in plan.ceilings if c.category_id == category.id), None)
     if row is None:
         db.session.add(EnvelopeCeiling(plan_id=plan.id, category_id=category.id, amount=amount))
     else:
         row.amount = amount
     db.session.commit()
+    _recalculate(pot, year, month)
+
+
+def _upsert_plan(pot, year, month):
+    plan = get_plan(pot, year, month)
+    if plan is None:
+        plan = EnvelopePlan(pot_id=pot.id, year=year, month=month)
+        db.session.add(plan)
+        db.session.flush()
+    return plan
+
+
+def freeze(pot, year, month):
+    """Store the current amount of EVERY dynamic envelope and mark the month validated.
+    No recalculation: the amounts are the ones already allocated."""
+    bm = get_or_create_budget_month(pot.id, year, month)
+    amounts = {cid: e.amount for cid, e in report(bm).envelopes.items()}
+    plan = _upsert_plan(pot, year, month)
+    rows = {c.category_id: c for c in plan.ceilings}
+    for cid, amount in amounts.items():
+        if cid in rows:
+            rows[cid].amount = amount
+        else:
+            db.session.add(EnvelopeCeiling(plan_id=plan.id, category_id=cid, amount=amount))
+    plan.validated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
+
+
+def unfreeze(pot, year, month):
+    """Reopen the month; the stored amounts stay (they become sliders). No recalculation."""
+    plan = get_plan(pot, year, month)
+    if plan is None:
+        return
+    plan.validated_at = None
+    db.session.commit()
+
+
+def personal_waiting(pot, year, month):
+    """A personal plan waits for the common plan to be validated (multi-member J6 only)."""
+    from app.models.user import User
+    from app.services import contribution_service as cs
+    if User.query.filter_by(household_id=pot.household_id).count() < 2:
+        return False
+    common = cs._common_of(pot)
+    if common is None or not cs.j6_started(common, year, month):
+        return False
+    cplan = cs.get_plan(common, year, month)
+    return cplan is None or cplan.status != 'validated'
+
+
+def validate_personal(pot, year, month):
+    if pot.kind != 'personal':
+        raise ValueError('not a personal pot')
+    if personal_waiting(pot, year, month):
+        raise CeilingError('waiting')
+    if is_frozen(pot, year, month):
+        raise CeilingError('frozen')
+    recalculate_budget_month(get_or_create_budget_month(pot.id, year, month))
+    freeze(pot, year, month)
+    _recalculate(pot, year, month)
+
+
+def reopen_personal(pot, year, month):
+    if not is_frozen(pot, year, month):
+        raise CeilingError('not_frozen')
+    unfreeze(pot, year, month)
     _recalculate(pot, year, month)
 
 

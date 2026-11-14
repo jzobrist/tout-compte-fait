@@ -550,6 +550,8 @@ def validate(plan, user, today, seen_snapshot=None):
     for uid, amount in current.items():
         db.session.add(ContributionShare(plan_id=plan.id, user_id=uid, amount=amount))
     plan.solidarity_adjusted = split(plan)[1]
+    from app.services import ceiling_service
+    ceiling_service.freeze(plan.pot, plan.year, plan.month)  # before 'validated': extra cut applies
     plan.status = 'validated'
     plan.validated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     plan.validated_negative = negative
@@ -574,5 +576,11 @@ def reopen(plan, user, today):
     plan.validated_negative = False
     plan.solidarity_adjusted = False
     db.session.commit()
+    from app.services import ceiling_service
+    ceiling_service.unfreeze(plan.pot, plan.year, plan.month)
+    for u in _members(plan.pot):
+        personal = Pot.query.filter_by(owner_id=u.id, kind='personal').first()
+        if personal is not None and ceiling_service.is_frozen(personal, plan.year, plan.month):
+            ceiling_service.unfreeze(personal, plan.year, plan.month)
     measure_caps(plan, today)
     recalculate_household(plan.pot, plan.year, plan.month)
