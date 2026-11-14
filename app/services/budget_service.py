@@ -87,10 +87,10 @@ def recalculate_budget_month(budget_month):
 
     Formula:
       disponible = total_income - sum(fixed amounts) - refloat supplement (personal pot)
-      dynamic.base_allocated = max(min, min(max, disponible * pct)) - refloat cut + carry_in
+      dynamic.base_allocated = ceiling (preset or stored slider, see ceiling_service) + carry_in
       fixed categories: base_allocated = amount + carry_in
     """
-    from app.services.refloat_service import envelope_cuts, get_plan
+    from app.services import ceiling_service
 
     categories = Category.query.filter_by(pot_id=budget_month.pot_id).all()
     disponible = pot_disponible(budget_month, categories)
@@ -116,8 +116,7 @@ def recalculate_budget_month(budget_month):
     # Re-running recalculate_budget_month preserves the original carry_in
     # to avoid double-counting across multiple recalculations in the same month.
     pot = budget_month.pot or db.session.get(Pot, budget_month.pot_id)
-    plan = get_plan(pot, budget_month.year, budget_month.month)
-    cuts = envelope_cuts(plan, budget_month).cuts if plan is not None else {}
+    ceilings = ceiling_service.report(budget_month).envelopes
     allocations = {}
     if pot.kind == 'common':
         from app.services.contribution_service import get_plan as get_contribution_plan
@@ -129,7 +128,7 @@ def recalculate_budget_month(budget_month):
         if cat.type in ('fixed_auto', 'fixed_amount'):
             budget_brut = fixed_brut(cat, budget_month)
         else:  # dynamic
-            budget_brut = dynamic_brut(cat, disponible) - cuts.get(cat.id, 0.0)
+            budget_brut = ceilings[cat.id].amount
         budget_brut += allocations.get(cat.id, 0.0)
         bmcs[cat.id].base_allocated = budget_brut + bmcs[cat.id].carry_in
 

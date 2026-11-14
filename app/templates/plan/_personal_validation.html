@@ -1,0 +1,18 @@
+{% if personal %}
+<div id="personal-validation-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="mt-2">
+  <div class="small">Non réparti : <strong>{{ personal.unallocated|money }} €</strong></div>
+  {% if personal.validated %}
+  <div class="small fw-bold text-success">Plafonds figés pour le mois</div>
+  <button class="btn btn-sm btn-outline-secondary"
+          hx-post="{{ url_for('plan.ceilings_reopen', pot_id=pot.id) }}"
+          hx-target="#personal-validation-{{ pot.id }}" hx-swap="outerHTML">Rouvrir mon perso</button>
+  {% elif personal.waiting %}
+  <button class="btn btn-sm btn-primary" disabled>Valider mon perso</button>
+  <span class="small text-secondary">en attente du plan commun</span>
+  {% else %}
+  <button class="btn btn-sm btn-primary"
+          hx-post="{{ url_for('plan.ceilings_validate', pot_id=pot.id) }}"
+          hx-target="#personal-validation-{{ pot.id }}" hx-swap="outerHTML">Valider mon perso</button>
+  {% endif %}
+</div>
+{% endif %}

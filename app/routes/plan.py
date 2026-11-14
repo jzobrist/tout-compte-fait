@@ -6,9 +6,10 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import Category, Pot
-from app.services import contribution_service, refloat_service, simulation_service
+from app.services import ceiling_service, contribution_service, refloat_service, simulation_service
+from app.services.ceiling_service import CeilingError
 from app.services.contribution_service import ContributionError
-from app.services.access_service import can_access_pot, get_current_pot
+from app.services.access_service import can_access_pot
 from app.services.balance_service import EnvelopeError, close_envelope, reopen_envelope
 from app.services.budget_service import (
     current_budget_month, get_or_create_budget_month, target_budget_month,
@@ -36,11 +37,30 @@ def _month_or_400(pot, source):
     year, month = source.get('year', type=int), source.get('month', type=int)
     if year is None and month is None:
         return None, None
-    cur = target_budget_month(date.today(), pot.income_start_day or 1)
+    window_pot = pot
+    if pot.kind == 'personal':
+        # a personal month is the common month with the same (y, m): use the common window
+        window_pot = Pot.query.filter_by(household_id=pot.household_id, kind='common').first() or pot
+    cur = target_budget_month(date.today(), window_pot.income_start_day or 1)
     nxt = (cur[0] + 1, 1) if cur[1] == 12 else (cur[0], cur[1] + 1)
     if (year, month) not in (cur, nxt):
         abort(400)
     return year, month
+
+
+def _my_personal_pot():
+    """The VIEWER's personal pot: the only personal pot a page or oob block may be built from."""
+    return Pot.query.filter_by(owner_id=current_user.id, kind='personal').first()
+
+
+def _personal_oob(common_view):
+    """Out-of-band refresh of section ② from the viewer's own personal pot (never another member's)."""
+    mine = _my_personal_pot()
+    if mine is None:
+        return ''
+    view = refloat_service.build_view(mine, date.today(), common_view['year'], common_view['month'],
+                                      current_user)
+    return render_template('plan/_personal_oob.html', **view)
 
 
 def _respond(pot, fragment):
@@ -48,7 +68,12 @@ def _respond(pot, fragment):
         return redirect(url_for('plan.index'))
     year, month = _month_or_400(pot, request.form)
     view = refloat_service.build_view(pot, date.today(), year, month, current_user)
-    return render_template(fragment, **view)
+    body = render_template(fragment, **view)
+    if pot.kind == 'common':
+        body += _personal_oob(view)
+    else:
+        body += render_template('plan/_personal_validation.html', oob=True, **view)
+    return body
 
 
 def _plan_or_400(pot):
@@ -75,10 +100,17 @@ def _common_or_404(pot_id):
 @plan_bp.route('')
 @login_required
 def index():
-    pot = get_current_pot()
-    year, month = _month_or_400(pot, request.args)
-    view = refloat_service.build_view(pot, date.today(), year, month, current_user)
-    return render_template('plan/index.html', **view)
+    mine = _my_personal_pot()
+    common = Pot.query.filter_by(household_id=current_user.household_id, kind='common').first()
+    if common is None or mine is None:
+        abort(404)
+    year, month = _month_or_400(common, request.args)
+    cv = refloat_service.build_view(common, date.today(), year, month, current_user)
+    pv = refloat_service.build_view(mine, date.today(), cv['year'], cv['month'], current_user)
+    return render_template('plan/index.html', balance_alerts=cv['balance_alerts'],
+                           my_contribution=pv['my_contribution'],
+                           common_html=render_template('plan/_section.html', **cv),
+                           personal_html=render_template('plan/_section.html', **pv))
 
 
 @plan_bp.route('/<int:pot_id>/settings', methods=['POST'])
@@ -88,24 +120,11 @@ def settings(pot_id):
     plan = _plan_or_400(pot)
     months = request.form.get('months', type=int) or plan.months
     split = request.form.get('split', type=int)
-    refloat_service.set_settings(plan, months, split / 100 if split is not None else None)
-    return _respond(pot, 'plan/_envelopes_response.html')
-
-
-@plan_bp.route('/<int:pot_id>/cut/<int:category_id>', methods=['POST'])
-@login_required
-def cut(pot_id, category_id):
-    pot = _pot_or_404(pot_id)
-    cat = _category_or_404(pot, category_id)
-    plan = _plan_or_400(pot)
-    allocation = request.form.get('allocation', type=float)
-    if allocation is None:
-        abort(400)
     try:
-        refloat_service.set_manual_allocation(plan, cat, allocation)
-    except ValueError:
+        refloat_service.set_settings(plan, months, split / 100 if split is not None else None)
+    except CeilingError:
         abort(400)
-    return _respond(pot, 'plan/_figures.html')
+    return _respond(pot, 'plan/_envelopes_response.html')
 
 
 def _toggle(pot_id, category_id, close):
@@ -243,3 +262,49 @@ def simulation(pot_id):
         return redirect(url_for('plan.index'))
     return render_template('plan/_simulation_result.html',
                            s=refloat_service.simulation_view(pot, date.today(), current_user))
+
+
+@plan_bp.route('/<int:pot_id>/ceiling/<int:category_id>', methods=['POST'])
+@login_required
+def ceiling(pot_id, category_id):
+    pot = _pot_or_404(pot_id)
+    cat = _category_or_404(pot, category_id)
+    year, month = _month_or_400(pot, request.form)
+    if year is None:
+        bm = current_budget_month(pot, date.today())
+        year, month = bm.year, bm.month
+    amount = request.form.get('amount', type=float)
+    if amount is None or not math.isfinite(amount):
+        abort(400)
+    try:
+        ceiling_service.set_ceiling(pot, year, month, cat, amount)
+    except (ValueError, CeilingError):
+        abort(400)
+    return _respond(pot, 'plan/_figures.html')
+
+
+def _personal_toggle(pot_id, action):
+    pot = _pot_or_404(pot_id)
+    if pot.kind != 'personal':
+        abort(404)
+    year, month = _month_or_400(pot, request.form)
+    if year is None:
+        bm = current_budget_month(pot, date.today())
+        year, month = bm.year, bm.month
+    try:
+        action(pot, year, month)
+    except (ValueError, CeilingError):
+        abort(400)
+    return _respond(pot, 'plan/_personal_response.html')
+
+
+@plan_bp.route('/<int:pot_id>/ceilings/validate', methods=['POST'])
+@login_required
+def ceilings_validate(pot_id):
+    return _personal_toggle(pot_id, ceiling_service.validate_personal)
+
+
+@plan_bp.route('/<int:pot_id>/ceilings/reopen', methods=['POST'])
+@login_required
+def ceilings_reopen(pot_id):
+    return _personal_toggle(pot_id, ceiling_service.reopen_personal)

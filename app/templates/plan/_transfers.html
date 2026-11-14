@@ -1,4 +1,4 @@
-<div id="transfers"{% if oob %} hx-swap-oob="true"{% endif %}>
+<div id="transfers-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if transfers %}
   <h6 class="mt-3">Virements vers le commun</h6>
   <ul class="list-unstyled small mb-0">

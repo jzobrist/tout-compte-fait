@@ -1,8 +1,18 @@
-<div id="refloat-summary"{% if oob %} hx-swap-oob="true"{% endif %}>
+<div id="refloat-summary-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if has_deficit %}
-  <div class="small">Découvert à résorber : <strong>{{ plan.deficit|money }} €</strong> · soit {{ share|money }} € ce mois-ci{% if pot.kind == 'common' %} dont {{ envelope_part|money }} € sur les enveloppes{% endif %}</div>
-  {% if report.unabsorbed > 0.005 %}
-  <div class="small text-danger">{{ report.unabsorbed|money }} € non résorbés ce mois (planchers) → reportés</div>
+  {% if pot.kind == 'common' %}
+  <div class="small">Découvert à résorber : <strong>{{ plan.deficit|money }} €</strong> · remboursement ce mois-ci : <strong>{{ share|money }} €</strong></div>
+  {% if envelope_part > 0 %}<div class="small text-secondary">Préréglage : {{ envelope_part|money }} € retirés des enveloppes</div>{% endif %}
+  {% else %}
+  <div class="small">Découvert à résorber : <strong>{{ plan.deficit|money }} €</strong> · soit {{ share|money }} € ce mois-ci</div>
   {% endif %}
+  {% endif %}
+  {% if j6 %}
+  {# J6: members already pay the floored part; only what the extra cut could not absorb is left #}
+  {% if report.extra_unabsorbed > 0.005 %}
+  <div class="small text-danger">{{ report.extra_unabsorbed|money }} € non absorbés par les enveloppes</div>
+  {% endif %}
+  {% elif has_deficit and report.unabsorbed > 0.005 %}
+  <div class="small text-danger">{{ report.unabsorbed|money }} € non résorbés ce mois (planchers) → reportés</div>
   {% endif %}
 </div>

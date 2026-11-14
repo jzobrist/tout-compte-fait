@@ -88,21 +88,7 @@ def test_settings_updates_months_and_split(db, household_clean):
     assert resp.status_code == 200
     db.session.refresh(plan)
     assert (plan.months, plan.split) == (3, 0.7)
-    assert 'id="envelopes"' in resp.get_data(as_text=True)
-
-
-def test_cut_returns_figures_only(db, household_clean):
-    h = household_clean
-    courses, _ = _deficit_setup(db, h, h.common)
-    h.client_a.get('/plan')
-    resp = h.client_a.post(f'/plan/{h.common.id}/cut/{courses.id}', headers=HX,
-                           data={'allocation': '150'})
-    html = resp.get_data(as_text=True)
-    assert resp.status_code == 200
-    assert 'hx-swap-oob' in html
-    assert 'type="range"' not in html
-    plan = RefloatPlan.query.filter_by(pot_id=h.common.id).one()
-    assert plan.cuts[0].amount == pytest.approx(50.0)  # brut 200 - allocation 150
+    assert 'id="envelopes-' in resp.get_data(as_text=True)
 
 
 def test_close_and_reopen_envelope_routes(db, household_clean):
@@ -198,7 +184,7 @@ def test_common_plan_waiting_shows_names_only(db, household_clean, frozen_today)
     _select(h.client_a, h.common)
     html_a = h.client_a.get('/plan').get_data(as_text=True)
     assert 'en attente du salaire de B' in html_a
-    assert '3 000' not in html_a and 'Calculer quand même' in html_a
+    assert '2 000' not in html_a and 'Calculer quand même' in html_a
     _select(h.client_b, h.common)
     html_b = h.client_b.get('/plan').get_data(as_text=True)
     assert 'en attente de votre salaire' in html_b
@@ -481,3 +467,299 @@ def test_simulation_input_keeps_exact_amount(db, household_clean, frozen_today):
     h.client_a.post(f'/plan/{h.common.id}/simulation', headers=HX, data={
         f'salary_{h.user_a.id}': '3000', f'salary_{h.user_b.id}': '12345.67'})
     assert sim.forecasts(h.user_a)[h.user_b.id] == 12345.67
+
+
+# --- plafonds figés: ceiling slider, personal validate/reopen -------------------------------
+
+def _ceiling_url(pot, cat):
+    return f'/plan/{pot.id}/ceiling/{cat.id}'
+
+
+def test_ceiling_route_updates_and_returns_figures(db, household_clean):
+    from app.models import EnvelopeCeiling
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'name="amount"' in page and 'delay:400ms' in page
+    resp = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '<input type="range"' not in body and 'hx-swap-oob' in body
+    row = EnvelopeCeiling.query.filter_by(category_id=culture.id).one()
+    assert row.amount == 120.0
+
+
+def test_ceiling_route_rejects(db, household_clean):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    rent = Category.query.filter_by(pot_id=h.common.id, name='Loyer').one()
+    url = _ceiling_url(h.common, culture)
+    post = lambda u, **d: h.client_a.post(u, data=d, headers=HX).status_code
+    assert post(url, amount='nan') == 400
+    assert post(url, amount='inf') == 400
+    assert post(url) == 400
+    assert post(url, amount='abc') == 400
+    assert post(_ceiling_url(h.common, rent), amount='10') == 400   # fixed category
+    # negative: clamped to the low bound
+    assert post(url, amount='-5') == 200
+    env = cs.report(current_budget_month(h.common, date.today())).envelopes[culture.id]
+    assert env.amount == env.low
+    # closed envelope
+    h.client_a.post(f'/plan/{h.common.id}/envelope/{courses.id}/close', headers=HX)
+    assert post(_ceiling_url(h.common, courses), amount='300') == 400
+    # frozen month
+    bm = current_budget_month(h.common, date.today())
+    cs.freeze(h.common, bm.year, bm.month)
+    assert post(url, amount='50') == 400
+
+
+def test_ceiling_route_partner_personal_pot_404(db, household_clean):
+    h = household_clean
+    cat = _cat(db, h.personal_a, 'Loisirs', pct=0.5)
+    _income(h.personal_a, 1000.0)
+    assert h.client_b.post(_ceiling_url(h.personal_a, cat), data={'amount': '10'},
+                           headers=HX).status_code == 404
+    assert h.client_b.post(f'/plan/{h.personal_a.id}/ceilings/validate', headers=HX).status_code == 404
+    assert h.client_b.post(f'/plan/{h.personal_a.id}/ceilings/reopen', headers=HX).status_code == 404
+
+
+def test_personal_validate_route_waiting_400_then_ok(db, household_clean, monkeypatch):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    _cat(db, h.personal_a, 'Loisirs', pct=0.5)
+    _income(h.personal_a, 1000.0)
+    _select(h.client_a, h.personal_a)
+    base = f'/plan/{h.personal_a.id}/ceilings'
+    monkeypatch.setattr(cs, 'personal_waiting', lambda *a: True)
+    assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400
+    monkeypatch.undo()
+    resp = h.client_a.post(f'{base}/validate', headers=HX)
+    assert resp.status_code == 200
+    assert 'id="envelopes-' in resp.get_data(as_text=True)
+    bm = current_budget_month(h.personal_a, date.today())
+    assert cs.is_frozen(h.personal_a, bm.year, bm.month)
+    assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400   # already frozen
+    assert h.client_a.post(f'{base}/reopen', headers=HX).status_code == 200
+    assert not cs.is_frozen(h.personal_a, bm.year, bm.month)
+    assert h.client_a.post(f'{base}/reopen', headers=HX).status_code == 400     # not frozen
+
+
+def test_personal_validate_on_common_pot_404(db, household_clean):
+    h = household_clean
+    for path in ('ceilings/validate', 'ceilings/reopen'):
+        assert h.client_a.post(f'/plan/{h.common.id}/{path}', headers=HX).status_code == 404
+
+
+def test_settings_refused_when_frozen(db, household_clean):
+    from app.services import ceiling_service as cs
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    h.client_a.get('/plan')
+    bm = current_budget_month(h.common, date.today())
+    cs.freeze(h.common, bm.year, bm.month)
+    resp = h.client_a.post(f'/plan/{h.common.id}/settings', headers=HX,
+                           data={'months': '3', 'split': '70'})
+    assert resp.status_code == 400
+
+
+# --- one page: ① Commun then ② Mon perso -----------------------------------------------------
+
+def _personal_a_setup(db, h):
+    cat = _cat(db, h.personal_a, 'Loisirs A', pct=0.3)
+    _income(h.personal_a, 4321.0)   # unallocated = 4321 * 0.7 = 3024.70
+    return cat
+
+
+def test_plan_page_shows_common_then_my_personal(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    _select(h.client_a, h.personal_a)    # the session's pot does not matter any more
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert html.index('① Commun') < html.index('② Mon perso')
+    assert 'Loisirs A' in html and f'id="envelopes-{h.personal_a.id}"' in html
+    assert f'id="envelopes-{h.common.id}"' in html
+    assert f'personal-validation-{h.personal_a.id}' in html
+
+
+def test_plan_page_partner_never_sees_my_personal(db, household_clean):
+    import re
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    needle = re.compile(r'3\D{0,3}024')
+
+    def clean(html):
+        assert 'Loisirs A' not in html and not needle.search(html)
+        assert f'personal-validation-{h.personal_a.id}' not in html
+
+    clean(h.client_b.get('/plan').get_data(as_text=True))
+    r = h.client_b.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    assert r.status_code == 200
+    clean(r.get_data(as_text=True))
+    # A's own response does carry A's personal block
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '130'}, headers=HX)
+    assert 'Loisirs A' in r.get_data(as_text=True)
+
+
+def test_plan_page_partner_never_sees_my_personal_validation(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    for client, name in ((h.client_a, 'a'), (h.client_b, 'b')):
+        r = client.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+        assert r.status_code == 200
+        assert ('Loisirs A' in r.get_data(as_text=True)) == (name == 'a')
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/reopen', headers=HX)
+    assert 'Loisirs A' not in r.get_data(as_text=True)
+    assert 'Loisirs A' not in h.client_b.get('/plan').get_data(as_text=True)
+
+
+def test_common_slider_response_refreshes_my_personal_oob(db, household_clean):
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    body = r.get_data(as_text=True)
+    assert f'personal-validation-{h.personal_a.id}' in body
+    assert f'/plan/{h.common.id}/ceiling/' not in body      # common sliders are not re-rendered
+    assert f'/plan/{h.personal_a.id}/ceiling/' in body       # the personal ones are (oob)
+
+
+def test_personal_validate_button_disabled_until_common_validated(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'en attente du plan commun' in html
+    assert 'Valider mon perso' in html and 'disabled' in html.split('Valider mon perso')[0][-200:]
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'en attente du plan commun' not in html
+    assert 'disabled' not in html.split('Valider mon perso')[0][-200:]
+
+
+def test_full_page_with_validated_common_plan(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.25)
+    _personal_a_setup(db, h)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert html.index('① Commun') < html.index('ton virement') < html.index('② Mon perso')
+    assert '(validé)' in html
+    common_sliders = [s for s in html.split('<input') if f'/plan/{h.common.id}/ceiling/' in s]
+    assert common_sliders and all('disabled' in s.split('>')[0] for s in common_sliders)
+    perso = [s for s in html.split('<input') if f'/plan/{h.personal_a.id}/ceiling/' in s]
+    assert perso and not any('disabled' in s.split('>')[0] for s in perso)
+    r = h.client_a.post(f'/plan/{h.personal_a.id}/ceilings/validate', headers=HX)
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'Plafonds figés pour le mois' in body and 'Rouvrir mon perso' in body
+
+
+def test_slider_attributes_rounded_to_cents(db, household_clean):
+    import re
+    h = household_clean
+    _account(db, h.personal_a, 500.0)
+    _cat(db, h.personal_a, 'Loisirs A', pct=1 / 3, floor=10.004)
+    _income(h.personal_a, 1000.0)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    tag = next(s for s in html.split('<input') if f'/plan/{h.personal_a.id}/ceiling/' in s)
+    for attr in ('min', 'max', 'value'):
+        val = re.search(rf'\b{attr}="([^"]*)"', tag).group(1)
+        assert re.fullmatch(r'-?\d+(\.\d{1,2})?', val), (attr, val)
+    lo, hi, v = (float(re.search(rf'\b{a}="([^"]*)"', tag).group(1)) for a in ('min', 'max', 'value'))
+    assert lo <= v <= hi
+
+
+def test_summary_j6_common_has_no_reportes_line(db, household_clean, frozen_today):
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.5, floor=100.0)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert '→ reportés' not in html
+
+
+def test_summary_pre_j6_common_keeps_reportes_line(db, household_clean):
+    h = household_clean
+    _deficit_setup(db, h, h.common)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Découvert à résorber' in html and 'Préréglage' in html
+    assert 'dont' not in html.split('Découvert à résorber')[1].split('</div>')[0]
+
+
+# --- review fixes ---------------------------------------------------------------------------
+
+def test_personal_actions_work_when_start_days_differ(db, household_clean, frozen_today):
+    h = household_clean
+    h.personal_a.income_start_day = 10     # today = 15th: personal window (Jul, Aug) differs from common (Jun, Jul)
+    db.session.commit()
+    cat = _personal_a_setup(db, h)
+    from app.models import Category as C
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert f'/plan/{h.personal_a.id}/ceiling/' in page
+    from app.services.budget_service import current_budget_month as cbm
+    cm = cbm(h.common, date.today())
+    form = {'year': cm.year, 'month': cm.month}
+    r = h.client_a.post(_ceiling_url(h.personal_a, cat), data={**form, 'amount': '100'}, headers=HX)
+    assert r.status_code == 200
+    assert f'personal-validation-{h.personal_a.id}' in r.get_data(as_text=True)   # fix 2
+    r = h.client_a.post(f'/plan/{h.personal_a.id}/ceilings/validate', data=form, headers=HX)
+    assert r.status_code == 200
+
+
+def test_common_validation_response_disables_common_sliders(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.25)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    body = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX).get_data(as_text=True)
+    sliders = [s for s in body.split('<input') if f'/plan/{h.common.id}/ceiling/' in s]
+    assert sliders and all('disabled' in s.split('>')[0] for s in sliders)
+
+
+def test_common_slider_response_refreshes_my_transfer_arrow(db, household_clean):
+    h = household_clean
+    courses, culture = _deficit_setup(db, h, h.common)
+    _personal_a_setup(db, h)
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'id="my-transfer-arrow"' in page
+    r = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
+    body = r.get_data(as_text=True)
+    assert 'id="my-transfer-arrow"' in body and 'hx-swap-oob' in body
+    # B's response carries B's own arrow only, never A's
+    rb = h.client_b.post(_ceiling_url(h.common, culture), data={'amount': '121'}, headers=HX)
+    assert 'Loisirs A' not in rb.get_data(as_text=True)
+
+
+def test_j6_slider_and_validation_refresh_arrow_amount(db, household_clean, frozen_today):
+    import re
+    h = household_clean
+    y, m = _j6_setup(db, h)
+    loisirs = _cat(db, h.common, 'Loisirs', pct=0.1)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+
+    def arrow(body):
+        found = re.search(r'id="my-transfer-arrow"[^>]*>([^<]*)<', body)
+        assert found, body
+        return found.group(1)
+
+    page = arrow(h.client_a.get('/plan').get_data(as_text=True))
+    assert 'provisoire' in page
+    r = h.client_a.post(_ceiling_url(h.common, loisirs), data={'amount': '0'}, headers=HX)
+    moved = arrow(r.get_data(as_text=True))
+    assert moved != page and 'provisoire' in moved
+    assert arrow(h.client_a.get('/plan').get_data(as_text=True)) == moved
+    r = h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    assert 'provisoire' in arrow(r.get_data(as_text=True))
+    r = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    assert 'validé' in arrow(h.client_a.get('/plan').get_data(as_text=True))

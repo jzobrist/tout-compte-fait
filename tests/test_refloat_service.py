@@ -143,21 +143,14 @@ def test_cuts_without_dynamic_categories(db, household_clean):
     recalculate_budget_month(bm)
 
 
-def test_manual_cut_clamped_and_reset_by_settings(db, household_clean):
+def test_settings_clamp_months(db, household_clean):
     h = household_clean
     pot = h.personal_a
-    courses, culture, sorties = _dyn3(db, pot)
-    bm = _bm(pot, 1000.0)
+    _dyn3(db, pot)
+    _bm(pot, 1000.0)
     plan = _plan(db, pot, 300.0)
-    rs.set_manual_cut(plan, courses, 999.0)
-    assert rs.envelope_cuts(plan, bm).cuts[courses.id] == pytest.approx(200.0)
-    assert _base(bm, courses) == pytest.approx(400.0)
-    rs.set_manual_cut(plan, culture, 0.0)
-    assert rs.envelope_cuts(plan, bm).cuts[culture.id] == 0.0
     rs.set_settings(plan, 2, None)
-    assert plan.cuts == []
     assert plan.months == 2
-    assert rs.envelope_cuts(plan, bm).cuts[courses.id] == pytest.approx(90.0)
     rs.set_settings(plan, 99, None)
     assert plan.months == 6
 
@@ -290,15 +283,3 @@ def test_old_pending_entries_not_subtracted(db, household_clean):
     fm = free_money(h.common, bm)
     assert fm.pending_entries == 0.0
     assert fm.value == pytest.approx(900.0)
-
-
-def test_deleting_category_removes_its_manual_cut(db, household_clean):
-    from app.models import RefloatCut
-    h = household_clean
-    courses, culture, sorties = _dyn3(db, h.common)
-    _bm(h.common, 1000.0)
-    plan = _plan(db, h.common, 300.0)
-    rs.set_manual_cut(plan, culture, 10.0)
-    resp = h.client_a.post(f'/categories/{culture.id}/delete')
-    assert resp.status_code in (200, 302)
-    assert RefloatCut.query.count() == 0
