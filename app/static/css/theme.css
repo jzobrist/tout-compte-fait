@@ -446,3 +446,31 @@ html.dark .btn-close { filter: invert(1); }
 .pointage-tabs .nav-link.active { background: var(--primary); color: #fff !important; }
 .pointage-row.pending-old { border-left: 4px solid var(--warn); background: var(--warn-bg); }
 .pointage-row .min-w-0 { min-width: 0; }
+
+/* ===== Plan du mois: ceiling slider + field, sticky transfers bar ===== */
+.ceiling-row { display: flex; align-items: center; gap: .5rem; width: 100%; margin-top: .25rem; }
+.ceiling-row .ceiling-range { flex: 1 1 auto; min-width: 0; width: 100%; --fill: 0%; }
+.ceiling-row .ceiling-field { flex: 0 0 6rem; width: 6rem; text-align: right; }
+.ceiling-range { -webkit-appearance: none; appearance: none; height: 1.25rem; background: transparent; }
+.ceiling-range::-webkit-slider-runnable-track {
+  height: .5rem; border-radius: .25rem; border: 1px solid var(--text-muted);
+  background: linear-gradient(to right, var(--primary) var(--fill), var(--border) var(--fill));
+}
+.ceiling-range::-moz-range-track {
+  height: .5rem; border-radius: .25rem; border: 1px solid var(--text-muted);
+  background: linear-gradient(to right, var(--primary) var(--fill), var(--border) var(--fill));
+}
+.ceiling-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 1.1rem; height: 1.1rem; margin-top: -.4rem; border-radius: 50%;
+  background: var(--primary-dark); border: 2px solid var(--bg-card);
+}
+.ceiling-range::-moz-range-thumb {
+  width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--primary-dark); border: 2px solid var(--bg-card);
+}
+.ceiling-range:disabled { opacity: .55; }
+.transfers-bar {
+  position: sticky; bottom: 0; z-index: 5; padding: .5rem .75rem; margin-top: .75rem;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+@media (max-width: 767.98px) { .transfers-bar { bottom: var(--bottom-nav-height); } }

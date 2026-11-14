@@ -31,4 +31,5 @@
   <h6>Enveloppes</h6>
   {% with oob=false %}{% include 'plan/_envelopes.html' %}{% endwith %}
   {% include 'plan/_personal_validation.html' %}
+  {% if pot.kind == 'common' %}{% with oob=false %}{% include 'plan/_transfers_bar.html' %}{% endwith %}{% endif %}
 </section>

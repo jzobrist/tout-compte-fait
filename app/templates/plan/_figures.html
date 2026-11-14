@@ -3,6 +3,7 @@
 {% include 'plan/_summary.html' %}
 {% include 'plan/_transfers.html' %}
 {% if contribution and contribution.plan %}{% include 'plan/_contribution_figures.html' %}{% endif %}
+{% if pot.kind == 'common' %}{% include 'plan/_transfers_bar.html' %}{% endif %}
 {% if with_envelopes is not defined or with_envelopes %}
 {% for row in envelopes %}{% include 'plan/_env_fig.html' %}{% endfor %}
 {% endif %}

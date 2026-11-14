@@ -1,0 +1,8 @@
+{# Sticky bar of the proposed transfers (common section). Nothing personal: shares are shared by both members. #}
+<div id="transfers-bar-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %}{% if contribution and contribution.plan %} class="transfers-bar small"{% endif %}>
+  {%- if contribution and contribution.plan and contribution.members -%}
+  <strong>Virements proposés</strong> —
+  {% for m in contribution.members %}{{ m.user.display_name }} : <strong>{{ m.amount|euros }} €</strong>{% if not loop.last %} · {% endif %}{% endfor %}
+  ({{ 'validé' if contribution.plan.status == 'validated' else 'provisoire' }})
+  {%- endif -%}
+</div>

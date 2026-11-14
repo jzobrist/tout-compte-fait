@@ -96,4 +96,4 @@ def simulate(common, user, today):
     caps = {u.id: cs.member_cap(u, year, month, today, salary=typed.get(u.id, 0.0)) for u in members}
     shares, adjusted, uncovered = cs.split_with_caps(bases, total_need, caps)
     shortfall = cs.shortfall_from_split(bases, shares, uncovered)
-    return Simulation(year, month, label, shares, adjusted, shortfall)
+    return Simulation(year, month, label, cs.round_shares(shares, caps), adjusted, shortfall)
