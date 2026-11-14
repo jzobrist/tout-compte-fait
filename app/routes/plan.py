@@ -37,7 +37,11 @@ def _month_or_400(pot, source):
     year, month = source.get('year', type=int), source.get('month', type=int)
     if year is None and month is None:
         return None, None
-    cur = target_budget_month(date.today(), pot.income_start_day or 1)
+    window_pot = pot
+    if pot.kind == 'personal':
+        # a personal month is the common month with the same (y, m): use the common window
+        window_pot = Pot.query.filter_by(household_id=pot.household_id, kind='common').first() or pot
+    cur = target_budget_month(date.today(), window_pot.income_start_day or 1)
     nxt = (cur[0] + 1, 1) if cur[1] == 12 else (cur[0], cur[1] + 1)
     if (year, month) not in (cur, nxt):
         abort(400)
@@ -67,6 +71,8 @@ def _respond(pot, fragment):
     body = render_template(fragment, **view)
     if pot.kind == 'common':
         body += _personal_oob(view)
+    else:
+        body += render_template('plan/_personal_validation.html', oob=True, **view)
     return body
 
 

@@ -694,3 +694,34 @@ def test_summary_pre_j6_common_keeps_reportes_line(db, household_clean):
     html = h.client_a.get('/plan').get_data(as_text=True)
     assert 'Découvert à résorber' in html and 'Préréglage' in html
     assert 'dont' not in html.split('Découvert à résorber')[1].split('</div>')[0]
+
+
+# --- review fixes ---------------------------------------------------------------------------
+
+def test_personal_actions_work_when_start_days_differ(db, household_clean, frozen_today):
+    h = household_clean
+    h.personal_a.income_start_day = 10     # today = 15th: personal window (Jul, Aug) differs from common (Jun, Jul)
+    db.session.commit()
+    cat = _personal_a_setup(db, h)
+    from app.models import Category as C
+    page = h.client_a.get('/plan').get_data(as_text=True)
+    assert f'/plan/{h.personal_a.id}/ceiling/' in page
+    from app.services.budget_service import current_budget_month as cbm
+    cm = cbm(h.common, date.today())
+    form = {'year': cm.year, 'month': cm.month}
+    r = h.client_a.post(_ceiling_url(h.personal_a, cat), data={**form, 'amount': '100'}, headers=HX)
+    assert r.status_code == 200
+    assert f'personal-validation-{h.personal_a.id}' in r.get_data(as_text=True)   # fix 2
+    r = h.client_a.post(f'/plan/{h.personal_a.id}/ceilings/validate', data=form, headers=HX)
+    assert r.status_code == 200
+
+
+def test_common_validation_response_disables_common_sliders(db, household_clean, frozen_today):
+    h = household_clean
+    _j6_setup(db, h)
+    _cat(db, h.common, 'Courses', pct=0.25)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/force', headers=HX)
+    h.client_a.post(f'/plan/{h.common.id}/contribution/validate', headers=HX)
+    body = h.client_b.post(f'/plan/{h.common.id}/contribution/validate', headers=HX).get_data(as_text=True)
+    sliders = [s for s in body.split('<input') if f'/plan/{h.common.id}/ceiling/' in s]
+    assert sliders and all('disabled' in s.split('>')[0] for s in sliders)
