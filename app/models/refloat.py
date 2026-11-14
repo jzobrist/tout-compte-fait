@@ -24,22 +24,6 @@ class RefloatPlan(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow)
 
     pot = db.relationship('Pot')
-    cuts = db.relationship('RefloatCut', back_populates='plan', cascade='all, delete-orphan')
-
-
-class RefloatCut(db.Model):
-    """Manual reduction of one dynamic envelope, overriding the automatic cut."""
-    __tablename__ = 'refloat_cut'
-    __table_args__ = (
-        db.UniqueConstraint('plan_id', 'category_id', name='uq_refloat_cut_plan_category'),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    plan_id = db.Column(db.Integer, db.ForeignKey('refloat_plan.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('category.id', ondelete='CASCADE'), nullable=False)
-    amount = db.Column(db.Double, nullable=False, default=0.0)
-
-    plan = db.relationship('RefloatPlan', back_populates='cuts')
 
 
 class PotAlertState(db.Model):

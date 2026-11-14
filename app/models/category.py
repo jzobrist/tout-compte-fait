@@ -29,7 +29,7 @@ class Category(db.Model):
 
     pot = db.relationship('Pot', back_populates='categories')
     operations = db.relationship('Operation', back_populates='category', lazy='dynamic', cascade='save-update, merge')
-    refloat_cuts = db.relationship('RefloatCut', cascade='all, delete-orphan')
+    envelope_ceilings = db.relationship('EnvelopeCeiling', cascade='all, delete-orphan')
     allocations = db.relationship('ProvisionAllocation', cascade='all, delete-orphan')
     budget_month_categories = db.relationship('BudgetMonthCategory', back_populates='category', lazy='dynamic', cascade='all, delete-orphan')
 

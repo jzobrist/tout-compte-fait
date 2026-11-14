@@ -314,7 +314,6 @@ def test_common_plan_never_shows_partner_salary(db, household_clean, frozen_toda
     assert live[h.user_a.id] != BASE_A and live[h.user_b.id] != BASE_B
     grab('force_a', h.client_a.get('/plan'), 'Besoin commun', 'a')
     grab('settings', h.client_b.post(f'{base}/settings', data={'months': '1', 'split': '50'}, headers=HX), '')
-    grab('cut', h.client_b.post(f'{base}/cut/{courses.id}', data={'allocation': '10'}, headers=HX), '')
     r = h.client_b.post(f'{base}/allocation/{loyer.id}', data={'amount': '10'}, headers=HX)
     assert r.status_code == 400
     grab('validate_b', h.client_b.post(f'{base}/contribution/validate', headers=HX), 'Besoin commun')
@@ -339,7 +338,7 @@ def test_common_plan_never_shows_partner_salary(db, household_clean, frozen_toda
         grab('tab_a_' + tab, h.client_a.get(f'/operations/pointage?tab={tab}', headers=HX), '', 'a')
     forb = {v: _forbidden(h, amounts, v) for v in ('a', 'b')}
     for where, (html, status, marker, viewer) in pages.items():
-        if where in ('settings', 'cut'):   # no J4 deficit plan here: 400 is expected, still scanned
+        if where == 'settings':   # no J4 deficit plan here: 400 is expected, still scanned
             assert status in (200, 400), where
         else:
             assert status == 200, where

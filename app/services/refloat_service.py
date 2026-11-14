@@ -10,7 +10,7 @@ from app.extensions import db
 from app.models.budget import BudgetMonthCategory
 from app.models.category import Category
 from app.models.pot import Pot
-from app.models.refloat import RefloatCut, RefloatPlan
+from app.models.refloat import RefloatPlan
 from app.models.user import User
 from app.services.budget_service import (
     budget_month_start, dynamic_brut, get_category_effective_budget, get_or_create_budget_month,
@@ -187,13 +187,12 @@ def envelope_part(plan):
 
 
 def envelope_cuts(plan, bm):
-    """Reduction of each dynamic envelope (auto prorata of pct, or manual), within capacity."""
+    """Reduction of each dynamic envelope (auto prorata of pct), within capacity."""
     if plan is None:
         return CutReport()
     target = envelope_part(plan)
     cats = Category.query.filter_by(pot_id=bm.pot_id, type='dynamic').order_by(Category.id).all()
     disponible = pot_disponible(bm)
-    manual = {c.category_id: c.amount for c in plan.cuts}
     total_pct = sum(c.percentage or 0.0 for c in cats)
     report = CutReport()
     for cat in cats:
@@ -207,9 +206,7 @@ def envelope_cuts(plan, bm):
                            if bmc is not None else 0.0)
             remaining = max(0.0, brut + carry_in + adjustments - get_spent_for_category(bm, cat))
         capacity = max(0.0, min(remaining, brut - (cat.min_amount or 0.0)))
-        if cat.id in manual:
-            cut = min(max(0.0, manual[cat.id]), capacity)
-        elif total_pct > 0:
+        if total_pct > 0:
             cut = min(capacity, target * (cat.percentage or 0.0) / total_pct)
         else:
             cut = 0.0
@@ -239,34 +236,9 @@ def set_settings(plan, months, split):
     if split is not None and plan.pot.kind == 'common':
         split = min(1.0, max(0.0, float(split)))
         plan.split = round(round(split / SPLIT_STEP) * SPLIT_STEP, 2)
-    for cut in list(plan.cuts):
-        db.session.delete(cut)
     db.session.commit()
     db.session.refresh(plan)
     _recalculate_plan(plan)
-
-
-def set_manual_cut(plan, category, amount):
-    if category.pot_id != plan.pot_id or category.type != 'dynamic':
-        raise ValueError('Seule une enveloppe dynamique du pot peut être ajustée.')
-    bm = get_or_create_budget_month(plan.pot_id, plan.year, plan.month)
-    capacity = envelope_cuts(plan, bm).capacity.get(category.id, 0.0)
-    value = min(max(0.0, float(amount)), capacity)
-    cut = RefloatCut.query.filter_by(plan_id=plan.id, category_id=category.id).first()
-    if cut is None:
-        cut = RefloatCut(plan_id=plan.id, category_id=category.id, amount=value)
-        db.session.add(cut)
-    else:
-        cut.amount = value
-    db.session.commit()
-    _recalculate_plan(plan)
-
-
-def set_manual_allocation(plan, category, allocation):
-    """Slider value is the envelope's budget after the cut: cut = budget without refloat − value."""
-    bm = get_or_create_budget_month(plan.pot_id, plan.year, plan.month)
-    brut = dynamic_brut(category, pot_disponible(bm))
-    set_manual_cut(plan, category, brut - float(allocation))
 
 
 def simulation_view(pot, today, user):
@@ -364,12 +336,7 @@ def build_view(pot, today, year=None, month=None, user=None):
                    spent=get_spent_for_category(bm, cat),
                    remaining=category_remaining(bm, cat),
                    closed=bmc is not None and bmc.closed_at is not None,
-                   floor=cat.min_amount or 0.0, slider=None)
-        if row['dynamic'] and has_deficit and not row['closed']:
-            brut = dynamic_brut(cat, disponible)
-            row['slider'] = dict(min=round(brut - report.capacity.get(cat.id, 0.0), 2),
-                                 max=round(brut, 2),
-                                 value=round(brut - report.cuts.get(cat.id, 0.0), 2))
+                   floor=cat.min_amount or 0.0)
         envelopes.append(row)
     transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
     my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)

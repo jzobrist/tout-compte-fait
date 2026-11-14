@@ -14,12 +14,6 @@
               hx-post="{{ url_for('plan.' ~ ('reopen' if row.closed else 'close'), pot_id=pot.id, category_id=cat.id) }}"
               hx-target="#envelopes" hx-swap="outerHTML">{{ 'Rouvrir' if row.closed else 'Clore' }}</button>
     </div>
-    {% if row.slider %}
-    <input type="range" class="form-range" name="allocation" aria-label="Budget {{ cat.name }}"
-           min="{{ row.slider.min }}" max="{{ row.slider.max }}" step="1" value="{{ row.slider.value }}"
-           hx-post="{{ url_for('plan.cut', pot_id=pot.id, category_id=cat.id) }}"
-           hx-trigger="input changed delay:400ms" hx-swap="none">
-    {% endif %}
   </div>
   {% else %}
   <p class="text-secondary small">Aucune enveloppe.</p>

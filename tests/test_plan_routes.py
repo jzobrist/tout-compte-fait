@@ -91,20 +91,6 @@ def test_settings_updates_months_and_split(db, household_clean):
     assert 'id="envelopes"' in resp.get_data(as_text=True)
 
 
-def test_cut_returns_figures_only(db, household_clean):
-    h = household_clean
-    courses, _ = _deficit_setup(db, h, h.common)
-    h.client_a.get('/plan')
-    resp = h.client_a.post(f'/plan/{h.common.id}/cut/{courses.id}', headers=HX,
-                           data={'allocation': '150'})
-    html = resp.get_data(as_text=True)
-    assert resp.status_code == 200
-    assert 'hx-swap-oob' in html
-    assert 'type="range"' not in html
-    plan = RefloatPlan.query.filter_by(pot_id=h.common.id).one()
-    assert plan.cuts[0].amount == pytest.approx(50.0)  # brut 200 - allocation 150
-
-
 def test_close_and_reopen_envelope_routes(db, household_clean):
     h = household_clean
     rent = _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)

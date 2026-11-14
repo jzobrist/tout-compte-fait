@@ -92,22 +92,6 @@ def settings(pot_id):
     return _respond(pot, 'plan/_envelopes_response.html')
 
 
-@plan_bp.route('/<int:pot_id>/cut/<int:category_id>', methods=['POST'])
-@login_required
-def cut(pot_id, category_id):
-    pot = _pot_or_404(pot_id)
-    cat = _category_or_404(pot, category_id)
-    plan = _plan_or_400(pot)
-    allocation = request.form.get('allocation', type=float)
-    if allocation is None:
-        abort(400)
-    try:
-        refloat_service.set_manual_allocation(plan, cat, allocation)
-    except ValueError:
-        abort(400)
-    return _respond(pot, 'plan/_figures.html')
-
-
 def _toggle(pot_id, category_id, close):
     pot = _pot_or_404(pot_id)
     cat = _category_or_404(pot, category_id)
