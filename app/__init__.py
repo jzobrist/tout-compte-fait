@@ -38,6 +38,13 @@ def create_app(config_name=None):
     bcrypt.init_app(app)
     csrf.init_app(app)
 
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def _csrf_error(e):
+        # X-Error lets the page explain a failed htmx call (base.html) instead of failing silently
+        return 'Session expirée : rechargez la page.', 400, {'X-Error': 'csrf'}
+
     from .routes.auth import auth_bp
     from .routes.dashboard import dashboard_bp
     from .routes.operations import operations_bp
