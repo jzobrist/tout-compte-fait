@@ -110,3 +110,32 @@ def test_dashboard_common_revenus_shows_received_and_expected(db, household_clea
     html = h.client_a.get('/').get_data(as_text=True)
     assert '>900,00€</div>' in html                          # received: B's transfer
     assert '+ 1 900,00 € attendus' in html                   # A's transfer 1100 + Prêt 800
+
+
+# --- position of a month whose previous month was never used ------------------------------------
+
+def _october_with_envelopes(db, h):
+    from app.services.budget_service import get_or_create_budget_month, recalculate_budget_month
+    from tests.test_contribution_service import _ccat
+    loyer = _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=1000.0)
+    recalculate_budget_month(get_or_create_budget_month(h.common.id, 2026, 10))
+    return loyer
+
+
+def test_position_ignores_envelopes_of_an_unused_previous_month(db, household_clean):
+    h = household_clean
+    _october_with_envelopes(db, h)            # October created on the fly, nothing ever pointed
+    plan = _ready(db, h, balance=500.0)
+    assert plan.position == pytest.approx(500.0)
+
+
+def test_position_keeps_envelopes_of_a_used_previous_month(db, household_clean):
+    h = household_clean
+    loyer = _october_with_envelopes(db, h)
+    _db.session.add(Operation(pot_id=h.common.id, user_id=h.user_a.id, amount=200.0,
+                              date=date(2026, 10, 10), label='LOYER', direction='debit',
+                              bank_label='LOYER', bank_date=date(2026, 10, 10), bank_reference='L1',
+                              classification='category', category_id=loyer.id))
+    _db.session.commit()
+    plan = _ready(db, h, balance=500.0)
+    assert plan.position == pytest.approx(500.0 - 800.0)   # 800 € of October rent still to pay
