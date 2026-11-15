@@ -17,7 +17,7 @@ def household_with_categories(db):
     u = User(email='svc@test.com', display_name='Svc')
     u.set_password('x')
     h = create_household('Svc Test', u)
-    pot = Pot.query.filter_by(household_id=h.id, kind='common').one()
+    pot = Pot.query.filter_by(owner_id=u.id, kind='personal').one()  # common: J6 disponible
     # fixed_auto: loyer 800
     loyer = Category(name='Loyer test', type='fixed_auto', amount=800.0, auto_day=1,
                      pot_id=pot.id, carry_over=False)

@@ -296,9 +296,9 @@ def test_personal_waits_for_common(db, household_clean, mail_outbox):
     assert cs.personal_waiting(h.personal_a, *M) is False
 
 
-def test_personal_waiting_false_without_j6(db, household_clean):
+def test_personal_waiting_before_first_common_plan(db, household_clean):
     h = household_clean
-    assert cs.personal_waiting(h.personal_a, *M) is False
+    assert cs.personal_waiting(h.personal_a, *M) is True
 
 
 def test_validate_personal_rejects_common(db, household_clean):

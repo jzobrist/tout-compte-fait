@@ -174,9 +174,8 @@ def dynamic_total(bm):
 def _recalculate(pot, year, month):
     if pot.kind == 'common':
         from app.services import contribution_service as cs
-        if cs.is_j6(pot, year, month):
-            cs.recalculate_household(pot, year, month)
-            return
+        cs.recalculate_household(pot, year, month)
+        return
     recalculate_budget_month(get_or_create_budget_month(pot.id, year, month))
 
 
@@ -257,7 +256,7 @@ def personal_waiting(pot, year, month):
     if User.query.filter_by(household_id=pot.household_id).count() < 2:
         return False
     common = cs._common_of(pot)
-    if common is None or not cs.j6_started(common, year, month):
+    if common is None:
         return False
     cplan = cs.get_plan(common, year, month)
     return cplan is None or cplan.status != 'validated'

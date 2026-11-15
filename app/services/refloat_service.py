@@ -63,12 +63,9 @@ def _measurable(pot, bm):
 def ensure_plan(pot, bm, today):
     """Plan of this budget month, created (deficit measured and frozen) when measurable."""
     from app.services.balance_service import free_money
-    from app.services.contribution_service import j6_started
     plan = get_plan(pot, bm.year, bm.month)
-    if plan is not None:
+    if plan is not None or pot.kind == 'common':   # common: created with its J6 plan only
         return plan
-    if pot.kind == 'common' and j6_started(pot, bm.year, bm.month):
-        return None
     if not _measurable(pot, bm):
         return None
     recalculate_budget_month(bm)
@@ -231,7 +228,7 @@ def build_view(pot, today, year=None, month=None, user=None):
     j6_plan = _prepare_j6(pot, today) if pot.kind == 'common' else None
     requested = bool(year and month)
     bm = get_or_create_budget_month(pot.id, year, month) if requested else current_budget_month(pot, today)
-    if bm.total_income > 0 or cs.is_j6(pot, bm.year, bm.month):
+    if bm.total_income > 0 or pot.kind == 'common':
         recalculate_budget_month(bm)
     plan = ensure_plan(pot, bm, today)
     has_deficit = plan is not None and plan.deficit > 0
@@ -277,7 +274,7 @@ def build_view(pot, today, year=None, month=None, user=None):
                 has_deficit=has_deficit,
                 share=monthly_share(plan) if plan is not None else 0.0,
                 envelope_part=envelope_part(plan) if has_deficit else 0.0,
-                j6=pot.kind == 'common' and cs.is_j6(pot, bm.year, bm.month),
+                j6=pot.kind == 'common',
                 report=ceilings, ceilings=ceilings, frozen=ceilings.frozen, personal=personal,
                 envelopes=envelopes, dormant_count=sum(r['dormant'] for r in envelopes),
                 my_contribution=my_contribution, contribution=contribution,

@@ -144,13 +144,6 @@ def _ready(db, h, a=3000.0, b=2000.0, balance=0.0, force=False):
     return cs.prepare_if_ready(h.common, TODAY, force=force)
 
 
-def test_target_month_skips_month_measured_by_j4(db, household_clean):
-    h = household_clean
-    db.session.add(RefloatPlan(pot_id=h.common.id, year=2026, month=11, deficit=10.0, months=1, split=0.5))
-    db.session.commit()
-    assert cs.target_month(h.common, TODAY) == (2026, 12)
-
-
 def test_target_month_current_when_untouched(db, household_clean):
     h = household_clean
     assert cs.target_month(h.common, TODAY) == (2026, 11)
@@ -167,8 +160,6 @@ def test_prepare_waits_for_both_salaries_then_force(db, household_clean):
     assert plan.forced
     _cat(db, h.personal_b, 'Prêt', 'fixed_amount', 100.0, True)
     assert cs.bases(plan) == {h.user_a.id: 3000.0, h.user_b.id: -100.0}
-    assert cs.is_j6(h.common, *M) and not cs.is_j6(h.personal_a, *M)
-    assert cs.j6_started(h.common, 2026, 12) and not cs.j6_started(h.common, 2026, 10)
 
 
 def test_prepare_waits_for_fresh_balance(db, household_clean):
@@ -399,7 +390,6 @@ def test_suggest_never_income_on_common_after_j6(db, household_clean):
     _account(db, h.common, 0.0)
     old = _credit(db, h, 50.0, day=date(2026, 9, 5))
     classify(old, h.user_a, 'income')
-    assert suggest(_credit(db, h, 50.0, day=date(2026, 9, 20))).classification == 'income'
     _j6(db, h)
     new = _credit(db, h, 60.0, day=date(2026, 11, 20))
     from unittest import mock
@@ -610,11 +600,37 @@ def test_contribution_window_follows_plan_creation(db, household_clean):
     assert contribution_received(h.common, h.user_a, 2026, 11) == 0.0
 
 
-def test_ensure_plan_none_for_later_month_once_j6_started(db, household_clean):
+def test_ensure_plan_never_creates_common_refloat_plan(db, household_clean):
+    from app.models import RefloatPlan
     h = household_clean
-    _loyer_plan(db, h)
-    nxt = get_or_create_budget_month(h.common.id, 2026, 12)
-    assert rs.ensure_plan(h.common, nxt, TODAY) is None
+    _salary(db, h.common, 1000.0)
+    _account(db, h.common, -500.0)
+    bm = get_or_create_budget_month(h.common.id, *M)
+    assert rs.ensure_plan(h.common, bm, TODAY) is None
+    assert RefloatPlan.query.count() == 0
+
+
+def test_common_disponible_zero_without_plan(db, household_clean):
+    from app.services.budget_service import pot_disponible
+    h = household_clean
+    _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=500.0)
+    _salary(db, h.common, 1000.0)
+    bm = get_or_create_budget_month(h.common.id, *M)
+    assert pot_disponible(bm) == 0.0
+
+
+def test_contribution_received_zero_without_plan(db, household_clean):
+    from app.services.pointage_service import contribution_received
+    h = household_clean
+    acc = BankAccount(pot_id=h.common.id, name='Joint', bank_name='B')
+    db.session.add(acc)
+    db.session.commit()
+    db.session.add(Operation(pot_id=h.common.id, bank_account_id=acc.id, user_id=h.user_a.id,
+                             amount=100.0, date=date(2026, 11, 5), bank_date=date(2026, 11, 5),
+                             direction='credit', bank_reference='VIR', classification='contribution',
+                             contributor_id=h.user_b.id))
+    db.session.commit()
+    assert contribution_received(h.common, h.user_b, *M) == 0.0
 
 
 def test_validate_rejects_stale_snapshot(db, household_clean, mail_outbox):

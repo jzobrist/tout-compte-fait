@@ -61,43 +61,43 @@ def _spend(db, h, pot, cat, amount, ref='R'):
 
 def test_ensure_plan_measures_deficit_from_free_money(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     assert plan.deficit == pytest.approx(500.0)
     assert (plan.months, plan.split) == (1, 0.5)
-    assert rs.ensure_plan(h.common, bm, TODAY).id == plan.id
+    assert rs.ensure_plan(h.personal_a, bm, TODAY).id == plan.id
 
 
 def test_ensure_plan_waits_for_income_and_fresh_balance(db, household_clean):
     h = household_clean
-    acc = _account(db, h.common, 100.0)
-    bm = _bm(h.common, 0.0)
-    assert rs.ensure_plan(h.common, bm, TODAY) is None
+    acc = _account(db, h.personal_a, 100.0)
+    bm = _bm(h.personal_a, 0.0)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY) is None
     bm.total_income = 1000.0
     acc.balance_at = datetime(2026, 10, 30, 6, 0)
     db.session.commit()
-    assert rs.ensure_plan(h.common, bm, TODAY) is None
+    assert rs.ensure_plan(h.personal_a, bm, TODAY) is None
     assert RefloatPlan.query.count() == 0
 
 
 def test_deficit_frozen_after_close(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    rent = _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    rent = _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     close_envelope(bm, rent, TODAY)
-    assert rs.ensure_plan(h.common, bm, TODAY).deficit == pytest.approx(500.0)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY).deficit == pytest.approx(500.0)
 
 
 def test_plan_defaults_from_previous_month(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    _plan(db, h.common, 100.0, months=3, split=0.7, month=10)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    _plan(db, h.personal_a, 100.0, months=3, split=0.7, month=10)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     assert (plan.months, plan.split) == (2, 0.7)
 
 

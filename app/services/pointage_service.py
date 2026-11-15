@@ -140,21 +140,18 @@ def contribution_allowed(op, user):
 def contribution_received(common_pot, user, year, month):
     """Contribution transfers received on the common pot from `user` for the month (year, month).
 
-    A J6 month runs from its plan's creation to the next plan's (transfers are made before the
-    budget month starts); other months use their budget-month window (J4 supplements).
+    A month runs from its plan's creation to the next plan's (transfers are made before the budget
+    month starts); 0 while the month has no plan.
     """
-    from app.services.budget_service import budget_month_start
     from app.services.contribution_service import _next, get_plan
     plan = get_plan(common_pot, year, month)
+    if plan is None:
+        return 0.0
+    start = plan.created_at.date()
     end = None
-    if plan is not None:
-        start = plan.created_at.date()
-        following = get_plan(common_pot, *_next(year, month))
-        if following is not None:
-            end = following.created_at.date()
-    else:
-        start = budget_month_start(common_pot, year, month)
-        end = budget_month_start(common_pot, *_next(year, month))
+    following = get_plan(common_pot, *_next(year, month))
+    if following is not None:
+        end = following.created_at.date()
     query = db.session.query(db.func.sum(Operation.amount)).filter(
         Operation.pot_id == common_pot.id,
         Operation.classification == 'contribution',
@@ -173,9 +170,7 @@ def suggest(op):
         return None
     excluded = ['contribution']  # needs a contributor: never one-click
     if op.direction == 'credit' and op.pot is not None and op.pot.kind == 'common':
-        from app.services.contribution_service import j6_started
-        if j6_started(op.pot, *target_budget_month(datetime.date.today(), op.pot.income_start_day or 1)):
-            excluded.append('income')  # from J6 on, credits on the common pot are contributions
+        excluded.append('income')  # credits on the common pot are contributions
     candidates = Operation.query.filter(
         Operation.pot_id == op.pot_id,
         Operation.id != op.id,

@@ -35,8 +35,8 @@ def index():
     current_day = today.day if (year == today.year and month == today.month) else days_in_month
 
     bm = get_or_create_budget_month(pot.id, year, month)
-    from app.services.contribution_service import expected_contributions, is_j6
-    if bm.total_income > 0 or is_j6(pot, year, month):
+    from app.services.contribution_service import expected_contributions
+    if bm.total_income > 0 or pot.kind == 'common':
         recalculate_budget_month(bm)
 
     categories = Category.query.filter_by(pot_id=pot.id).all()

@@ -207,18 +207,6 @@ def get_plan(common, year, month):
     return ContributionPlan.query.filter_by(pot_id=common.id, year=year, month=month).first()
 
 
-def is_j6(pot, year, month):
-    return pot.kind == 'common' and get_plan(pot, year, month) is not None
-
-
-def j6_started(common, year, month):
-    return ContributionPlan.query.filter(
-        ContributionPlan.pot_id == common.id,
-        db.or_(ContributionPlan.year < year,
-               db.and_(ContributionPlan.year == year, ContributionPlan.month <= month)),
-    ).first() is not None
-
-
 def _members(common):
     return User.query.filter_by(household_id=common.household_id).order_by(User.id).all()
 
@@ -238,8 +226,7 @@ def peek_target_month(common, today):
 
 
 def _target_after(common, cur):
-    if get_plan(common, *cur) is None and RefloatPlan.query.filter_by(
-            pot_id=common.id, year=cur[0], month=cur[1]).first() is None:
+    if get_plan(common, *cur) is None:
         return cur
     return _next(*cur)
 

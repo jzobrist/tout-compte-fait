@@ -68,9 +68,8 @@ def pot_disponible(budget_month, categories=None):
     """Income left for dynamic categories: income − fixed amounts (common pot: J6 common disponible)."""
     pot = budget_month.pot or db.session.get(Pot, budget_month.pot_id)
     if pot.kind == 'common':
-        from app.services.contribution_service import common_disponible, is_j6
-        if is_j6(pot, budget_month.year, budget_month.month):
-            return common_disponible(budget_month)
+        from app.services.contribution_service import common_disponible
+        return common_disponible(budget_month)
     if categories is None:
         categories = Category.query.filter_by(pot_id=budget_month.pot_id).all()
     fixed_total = sum(fixed_brut(c, budget_month) for c in categories
