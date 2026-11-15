@@ -637,19 +637,34 @@ class MemberContribution:
     advance: float = 0.0
 
 
+def offset_dues(dues, excess):
+    """Lower the dues by `excess` (what members transferred beyond their own transfer), prorata of
+    each due, never below 0, in cents."""
+    total = sum(dues.values())
+    if excess <= 0 or total <= 0:
+        return dict(dues)
+    if excess >= total:
+        return {k: 0.0 for k in dues}
+    return {k: round(v - excess * v / total, 2) for k, v in dues.items()}
+
+
 def member_status(plan):
-    """Per member (by user id): contribution, received on the common pot this month, still due."""
+    """Per member (by user id): contribution, received on the common pot this month, still due.
+
+    What a member transferred beyond their own transfer pays the plan's need too: it lowers what the
+    others still owe (prorata); only what remains beyond every due is surplus for the next month."""
     from app.services.pointage_service import contribution_received
     shares_, advances_ = shares(plan), advances(plan)
     amounts = to_transfers(shares_, advances_)
-    out = []
-    for u in _members(plan.pot):
-        amount = amounts.get(u.id, 0.0)
-        received = contribution_received(plan.pot, u, plan.year, plan.month)
-        out.append(MemberContribution(u, amount, received, max(0.0, amount - received),
-                                      is_validated_by(plan, u), shares_.get(u.id, 0.0),
-                                      advances_.get(u.id, 0.0)))
-    return out
+    members = _members(plan.pot)
+    received = {u.id: contribution_received(plan.pot, u, plan.year, plan.month) for u in members}
+    excess = sum(max(0.0, received[u.id] - amounts.get(u.id, 0.0)) for u in members)
+    dues = offset_dues({u.id: max(0.0, amounts.get(u.id, 0.0) - received[u.id]) for u in members},
+                       excess)
+    return [MemberContribution(u, amounts.get(u.id, 0.0), received[u.id], dues[u.id],
+                               is_validated_by(plan, u), shares_.get(u.id, 0.0),
+                               advances_.get(u.id, 0.0))
+            for u in members]
 
 
 def due_for(personal_pot, year, month):
