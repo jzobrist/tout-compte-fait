@@ -296,9 +296,9 @@ def test_personal_waits_for_common(db, household_clean, mail_outbox):
     assert cs.personal_waiting(h.personal_a, *M) is False
 
 
-def test_personal_waiting_false_without_j6(db, household_clean):
+def test_personal_waiting_before_first_common_plan(db, household_clean):
     h = household_clean
-    assert cs.personal_waiting(h.personal_a, *M) is False
+    assert cs.personal_waiting(h.personal_a, *M) is True
 
 
 def test_validate_personal_rejects_common(db, household_clean):
@@ -479,38 +479,3 @@ def test_close_when_frozen_does_not_pin(db, household_clean, mail_outbox):
     assert {c.category_id: c.amount for c in cs.get_plan(h.common, *M).ceilings} == rows
 
 
-def _make_legacy_validated(db, h):
-    """Validated ContributionPlan from before the feature: no EnvelopePlan."""
-    plan, loisirs, vacances = _ceiling_setup(db, h)
-    _validate_common(h)
-    ep = cs.get_plan(h.common, *M)
-    EnvelopeCeiling.query.filter_by(plan_id=ep.id).delete()
-    db.session.delete(ep)
-    db.session.commit()
-    return plan, loisirs, vacances
-
-
-def test_legacy_validated_common_month_is_frozen(db, household_clean, mail_outbox):
-    h = household_clean
-    _, loisirs, _ = _make_legacy_validated(db, h)
-    assert cs.get_plan(h.common, *M) is None
-    assert cs.is_frozen(h.common, *M)
-    assert cs.report(_common_bm(h)).frozen
-    with pytest.raises(cs.CeilingError, match='frozen'):
-        cs.set_ceiling(h.common, *M, loisirs, 300.0)
-    with pytest.raises(cs.CeilingError, match='frozen'):
-        rs.set_settings(rs.get_plan(h.common, *M), 2, None)
-
-
-def test_build_view_lazily_freezes_legacy_validated_month(db, household_clean, mail_outbox):
-    h = household_clean
-    _, loisirs, vacances = _make_legacy_validated(db, h)
-    rs.build_view(h.common, CTODAY, user=h.user_a)
-    ep = cs.get_plan(h.common, *M)
-    assert ep is not None and ep.validated_at is not None
-    assert {c.category_id for c in ep.ceilings} == {loisirs.id, vacances.id}
-    bm = _common_bm(h)
-    before = {c.id: _base(bm, c).base_allocated for c in (loisirs, vacances)}
-    bm.total_income = 5000.0
-    ccs.recalculate_household(h.common, *M)
-    assert {c.id: _base(bm, c).base_allocated for c in (loisirs, vacances)} == pytest.approx(before)

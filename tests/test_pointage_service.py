@@ -308,7 +308,13 @@ def test_reclassify_contribution_clears_contributor(db, household_ab):
 
 def test_contribution_received_sums_month(db, household_ab):
     from app.services.pointage_service import contribution_received
+    from datetime import datetime
+    from app.extensions import db as _db
+    from app.models import ContributionPlan
     h = household_ab
+    _db.session.add(ContributionPlan(pot_id=h.common.id, year=2026, month=11,
+                                     created_at=datetime(2026, 10, 29, 8, 0)))
+    _db.session.commit()
     acc = _account(db, h.common)
     for amount, day, ref in ((50.0, date(2026, 11, 3), 'R1'), (30.0, date(2026, 11, 20), 'R2'),
                              (99.0, date(2026, 10, 28), 'R3')):
@@ -317,3 +323,15 @@ def test_contribution_received_sums_month(db, household_ab):
         classify(op, h.user_a, 'contribution', contributor=h.user_b)
     assert contribution_received(h.common, h.user_b, 2026, 11) == pytest.approx(80.0)
     assert contribution_received(h.common, h.user_a, 2026, 11) == 0.0
+
+
+def test_suggest_never_income_on_common_before_first_plan(db, household_ab):
+    h = household_ab
+    acc = _account(db, h.common)
+    old = _op(db, h, h.common, direction='credit', account=acc, label='VIR SALAIRE',
+              bank_date=date(2026, 10, 10), bank_reference='OLD', classification='income')
+    assert old.classification == 'income'
+    new = _op(db, h, h.common, direction='credit', account=acc, label='VIR SALAIRE',
+              bank_reference='NEW')
+    s = suggest(new)
+    assert s is None or s.classification != 'income'

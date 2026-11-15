@@ -51,9 +51,12 @@ def test_report_preset_floored_to_the_euro(db, household_clean):
 
 
 def test_report_preset_floored_both_pots(db, household_clean):
+    from app.services.budget_service import get_or_create_budget_month
+    from tests.test_contribution_service import M, _ready
     h = household_clean
     c = _ccat(db, h.common, 'C', pct=0.07213)
-    bm = _bm(h.common, 1000.0)
+    assert _ready(db, h, a=1000.0, b=None, force=True) is not None  # common disponible = 1000
+    bm = get_or_create_budget_month(h.common.id, *M)
     assert ceil_s.report(bm).envelopes[c.id].amount == 72.0
 
 

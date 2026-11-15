@@ -73,6 +73,9 @@ def create_app(config_name=None):
     app.register_blueprint(plan_bp)
     app.register_blueprint(pwa_bp)
 
+    from . import cli
+    cli.register(app)
+
     @app.context_processor
     def inject_pots():
         from flask_login import current_user

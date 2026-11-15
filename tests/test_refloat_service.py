@@ -61,43 +61,43 @@ def _spend(db, h, pot, cat, amount, ref='R'):
 
 def test_ensure_plan_measures_deficit_from_free_money(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     assert plan.deficit == pytest.approx(500.0)
     assert (plan.months, plan.split) == (1, 0.5)
-    assert rs.ensure_plan(h.common, bm, TODAY).id == plan.id
+    assert rs.ensure_plan(h.personal_a, bm, TODAY).id == plan.id
 
 
 def test_ensure_plan_waits_for_income_and_fresh_balance(db, household_clean):
     h = household_clean
-    acc = _account(db, h.common, 100.0)
-    bm = _bm(h.common, 0.0)
-    assert rs.ensure_plan(h.common, bm, TODAY) is None
+    acc = _account(db, h.personal_a, 100.0)
+    bm = _bm(h.personal_a, 0.0)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY) is None
     bm.total_income = 1000.0
     acc.balance_at = datetime(2026, 10, 30, 6, 0)
     db.session.commit()
-    assert rs.ensure_plan(h.common, bm, TODAY) is None
+    assert rs.ensure_plan(h.personal_a, bm, TODAY) is None
     assert RefloatPlan.query.count() == 0
 
 
 def test_deficit_frozen_after_close(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    rent = _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    rent = _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     close_envelope(bm, rent, TODAY)
-    assert rs.ensure_plan(h.common, bm, TODAY).deficit == pytest.approx(500.0)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY).deficit == pytest.approx(500.0)
 
 
 def test_plan_defaults_from_previous_month(db, household_clean):
     h = household_clean
-    _account(db, h.common, 100.0)
-    _plan(db, h.common, 100.0, months=3, split=0.7, month=10)
-    bm = _bm(h.common, 1000.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
+    _account(db, h.personal_a, 100.0)
+    _plan(db, h.personal_a, 100.0, months=3, split=0.7, month=10)
+    bm = _bm(h.personal_a, 1000.0)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
     assert (plan.months, plan.split) == (2, 0.7)
 
 
@@ -161,87 +161,6 @@ def _common_with_incomes(db, h, income_a=3000.0, income_b=2000.0):
     return _bm(h.common, 1000.0)
 
 
-def test_member_transfers_prorata_and_cap(db, household_clean):
-    h = household_clean
-    _common_with_incomes(db, h)
-    plan = _plan(db, h.common, 300.0, split=1.0)
-    by_user = {t.user.id: t for t in rs.member_transfers(plan)}
-    assert by_user[h.user_a.id].requested == pytest.approx(180.0)
-    assert by_user[h.user_b.id].requested == pytest.approx(120.0)
-    assert not by_user[h.user_b.id].capped
-    assert rs.envelope_part(plan) == pytest.approx(0.0)
-    _cat(db, h.personal_b, 'Loyer B', type_='fixed_amount', amount=1950.0)
-    by_user = {t.user.id: t for t in rs.member_transfers(plan)}
-    assert by_user[h.user_b.id].requested == pytest.approx(50.0)
-    assert by_user[h.user_b.id].capped
-    assert by_user[h.user_a.id].requested == pytest.approx(180.0)
-    assert rs.envelope_part(plan) == pytest.approx(70.0)
-
-
-def test_single_member_gets_whole_transfer(db):
-    from app.models import Pot
-    from app.services.household_service import create_household
-    u = User(email='solo@test.com', display_name='Solo')
-    u.set_password('x')
-    hh = create_household('Solo', u)
-    Category.query.delete()
-    db.session.commit()
-    common = Pot.query.filter_by(household_id=hh.id, kind='common').one()
-    personal = Pot.query.filter_by(owner_id=u.id).one()
-    _bm(personal, 1000.0)
-    _bm(common, 500.0)
-    plan = _plan(db, common, 300.0, split=1.0)
-    [t] = rs.member_transfers(plan)
-    assert t.requested == pytest.approx(300.0)
-
-
-def test_no_income_members_capped_to_envelopes(db, household_clean):
-    h = household_clean
-    _common_with_incomes(db, h, 0.0, 0.0)
-    plan = _plan(db, h.common, 300.0, split=1.0)
-    transfers = rs.member_transfers(plan)
-    assert all(t.capped and t.requested == 0.0 for t in transfers)
-    assert rs.envelope_part(plan) == pytest.approx(300.0)
-
-
-def test_supplement_reduces_personal_dynamic_envelopes(db, household_clean):
-    h = household_clean
-    loisirs = _cat(db, h.personal_a, 'Loisirs', pct=0.5)
-    pbm = _bm(h.personal_a, 3000.0)
-    _bm(h.personal_b, 2000.0)
-    _bm(h.common, 1000.0)
-    assert _base(pbm, loisirs) == pytest.approx(1500.0)
-    plan = _plan(db, h.common, 300.0, split=1.0)
-    rs.set_settings(plan, 1, 1.0)
-    assert rs.supplement_requested_for(h.personal_a, 2026, 11) == pytest.approx(180.0)
-    assert _base(pbm, loisirs) == pytest.approx((3000.0 - 180.0) * 0.5)
-
-
-def test_contribution_does_not_inflate_common(db, household_clean):
-    h = household_clean
-    courses, culture, sorties = _dyn3(db, h.common)
-    _account(db, h.personal_b, 500.0, name='Perso B')
-    pbm_b = get_or_create_budget_month(h.personal_b.id, 2026, 11)
-    common_acc = _account(db, h.common, 0.0, name='Joint')
-    cbm = _common_with_incomes(db, h)
-    plan = _plan(db, h.common, 300.0, split=1.0)
-    recalculate_budget_month(cbm)
-    before = _base(cbm, courses)
-    op = Operation(pot_id=h.common.id, bank_account_id=common_acc.id, user_id=h.user_a.id,
-                   amount=100.0, date=date(2026, 11, 12), bank_date=date(2026, 11, 12),
-                   direction='credit', bank_reference='VIR1', bank_label='VIR B')
-    db.session.add(op)
-    db.session.commit()
-    classify(op, h.user_a, 'contribution', contributor=h.user_b)
-    assert cbm.total_income == pytest.approx(1000.0)
-    assert _base(cbm, courses) == pytest.approx(before)
-    by_user = {t.user.id: t for t in rs.member_transfers(plan)}
-    assert by_user[h.user_b.id].received == pytest.approx(100.0)
-    assert by_user[h.user_b.id].due == pytest.approx(20.0)
-    assert free_money(h.personal_b, pbm_b).transfer_due == pytest.approx(20.0)
-    assert free_money(h.common, cbm).transfer_expected == pytest.approx(180.0 + 20.0)
-
-
 def test_recalculate_idempotent_with_plan(db, household_clean):
     h = household_clean
     pot = h.personal_a
@@ -255,22 +174,6 @@ def test_recalculate_idempotent_with_plan(db, household_clean):
 
 # --- final review fixes ---
 
-def test_supplement_received_counted_in_common_budget_month(db, household_clean):
-    from app.services.pointage_service import contribution_received
-    h = household_clean
-    h.common.income_start_day = 25
-    db.session.commit()
-    acc = _account(db, h.common, 0.0, name='Joint')
-    op = Operation(pot_id=h.common.id, bank_account_id=acc.id, user_id=h.user_a.id, amount=100.0,
-                   date=date(2026, 11, 27), bank_date=date(2026, 11, 27), direction='credit',
-                   bank_reference='VIR27', bank_label='VIR B')
-    db.session.add(op)
-    db.session.commit()
-    classify(op, h.user_a, 'contribution', contributor=h.user_b)
-    assert contribution_received(h.common, h.user_b, 2026, 12) == pytest.approx(100.0)
-    assert contribution_received(h.common, h.user_b, 2026, 11) == 0.0
-
-
 def test_old_pending_entries_not_subtracted(db, household_clean):
     h = household_clean
     _account(db, h.common, 1000.0)
@@ -283,3 +186,12 @@ def test_old_pending_entries_not_subtracted(db, household_clean):
     fm = free_money(h.common, bm)
     assert fm.pending_entries == 0.0
     assert fm.value == pytest.approx(900.0)
+
+
+def test_envelope_part_common_uses_split_only(db, household_clean):
+    h = household_clean
+    _common_with_incomes(db, h, 0.0, 0.0)  # no personal income: J4 capped members to 0
+    common_plan = _plan(db, h.common, 600.0, months=2, split=0.25)
+    assert rs.envelope_part(common_plan) == pytest.approx(225.0)
+    personal_plan = _plan(db, h.personal_a, 600.0, months=2)
+    assert rs.envelope_part(personal_plan) == pytest.approx(300.0)

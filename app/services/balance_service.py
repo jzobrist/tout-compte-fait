@@ -32,7 +32,6 @@ class FreeMoney:
     income_received: bool
     remaining: float
     pending_entries: float
-    transfer_due: float
     transfer_expected: float
     value: float | None
 
@@ -87,29 +86,24 @@ def pending_entries_total(pot, since=None):
 
 
 def free_money(pot, bm):
-    """Argent vraiment libre = balance − pending entries − remaining of every envelope ± supplements."""
+    """Argent vraiment libre = balance − pending entries − remaining of every envelope + J6 transfers
+    still expected (common pot). A personal pot reserves its due transfer through the remaining of
+    its « Virement vers le commun » category."""
     balance = pot_balance(pot)
     remaining = sum(category_remaining(bm, c) for c in Category.query.filter_by(pot_id=pot.id))
     prev = (bm.year - 1, 12) if bm.month == 1 else (bm.year, bm.month - 1)
     pending = pending_entries_total(pot, since=budget_month_start(pot, *prev))
-    transfer_due, transfer_expected = 0.0, 0.0
-    from app.services import contribution_service, refloat_service
+    transfer_expected = 0.0
+    from app.services import contribution_service
     income_received = bm.total_income > 0
     j6_plan = contribution_service.get_plan(pot, bm.year, bm.month) if pot.kind == 'common' else None
     if j6_plan is not None:
         transfer_expected = sum(m.due for m in contribution_service.member_status(j6_plan))
         income_received = True
-    elif pot.kind == 'personal':
-        transfer = refloat_service.member_transfer_for(pot, bm.year, bm.month)
-        transfer_due = transfer.due if transfer is not None else 0.0
-    else:
-        plan = refloat_service.get_plan(pot, bm.year, bm.month)
-        if plan is not None:
-            transfer_expected = sum(t.due for t in refloat_service.member_transfers(plan))
     value = None
     if balance.known:
-        value = balance.value - pending - remaining - transfer_due + transfer_expected
-    return FreeMoney(balance, income_received, remaining, pending, transfer_due,
+        value = balance.value - pending - remaining + transfer_expected
+    return FreeMoney(balance, income_received, remaining, pending,
                      transfer_expected, value)
 
 

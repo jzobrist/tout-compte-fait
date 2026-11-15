@@ -22,7 +22,7 @@ class Operation(db.Model):
     bank_label = db.Column(db.String(200), nullable=True)
     bank_date = db.Column(db.Date, nullable=True)
     entered_amount = db.Column(db.Double, nullable=True)
-    # classification 'refloat_transfer': member whose transfer this credit is
+    # classification 'contribution': member whose transfer this credit is
     contributor_id = db.Column(
         db.Integer, db.ForeignKey('user.id', name='fk_operation_contributor_id'), nullable=True,
     )

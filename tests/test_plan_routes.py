@@ -50,6 +50,17 @@ def _deficit_setup(db, h, pot):
     return courses, culture
 
 
+def _j6_deficit_setup(db, h):
+    """Common pot in J6: salaries 3000/2000, common overdrawn (-500), Loyer + Courses/Culture."""
+    _account(db, h.common, -500.0)
+    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=600.0)
+    courses = _cat(db, h.common, 'Courses', pct=0.5, floor=100.0)
+    culture = _cat(db, h.common, 'Culture', pct=0.5)
+    _income(h.personal_a, 3000.0)
+    _income(h.personal_b, 2000.0)
+    return courses, culture
+
+
 def _select(client, pot):
     client.post(f'/pots/{pot.id}/select')
 
@@ -81,7 +92,7 @@ def test_plan_page_no_income_mention(db, household_clean):
 
 def test_settings_updates_months_and_split(db, household_clean):
     h = household_clean
-    _deficit_setup(db, h, h.common)
+    _j6_deficit_setup(db, h)
     h.client_a.get('/plan')
     plan = RefloatPlan.query.filter_by(pot_id=h.common.id).one()
     assert plan.deficit > 0
@@ -133,24 +144,6 @@ def test_personal_plan_of_partner_404(db, household_clean):
     h = household_clean
     resp = h.client_b.post(f'/plan/{h.personal_a.id}/settings', data={'months': '2'})
     assert resp.status_code == 404
-
-
-def test_common_plan_hides_partner_personal_figures(db, household_clean):
-    h = household_clean
-    _deficit_setup(db, h, h.common)
-    # month already measured by J4 (before J6): its supplement logic stays untouched
-    from app.services import refloat_service
-    refloat_service.ensure_plan(h.common, current_budget_month(h.common, date.today()), date.today())
-    _income(h.personal_a, 4321.0)
-    _cat(db, h.personal_a, 'Loyer A', type_='fixed_amount', amount=4300.0)  # cap A = 21
-    _income(h.personal_b, 1000.0)
-    h.client_b.get('/plan')
-    h.client_b.post(f'/plan/{h.common.id}/settings', data={'months': '1', 'split': '100'})
-    html = h.client_b.get('/plan').get_data(as_text=True)
-    assert 'plafond atteint pour A' in html
-    assert '4 321' not in html and '4 300' not in html
-    assert '21,00' not in html  # A's capped supplement equals A's cap: hidden from B
-    assert '21,00' in h.client_a.get('/plan').get_data(as_text=True)  # A sees it
 
 
 def test_dashboard_shows_balance_card(db, household_clean):
@@ -480,7 +473,7 @@ def _ceiling_url(pot, cat):
 def test_ceiling_route_updates_and_returns_figures(db, household_clean):
     from app.models import EnvelopeCeiling
     h = household_clean
-    courses, culture = _deficit_setup(db, h, h.common)
+    courses, culture = _j6_deficit_setup(db, h)
     page = h.client_a.get('/plan').get_data(as_text=True)
     assert 'name="amount"' in page and 'delay:400ms' in page
     resp = h.client_a.post(_ceiling_url(h.common, culture), data={'amount': '120'}, headers=HX)
@@ -535,7 +528,7 @@ def test_personal_validate_route_waiting_400_then_ok(db, household_clean, monkey
     base = f'/plan/{h.personal_a.id}/ceilings'
     monkeypatch.setattr(cs, 'personal_waiting', lambda *a: True)
     assert h.client_a.post(f'{base}/validate', headers=HX).status_code == 400
-    monkeypatch.undo()
+    monkeypatch.setattr(cs, 'personal_waiting', lambda *a: False)   # common plan validated
     resp = h.client_a.post(f'{base}/validate', headers=HX)
     assert resp.status_code == 200
     assert 'id="envelopes-' in resp.get_data(as_text=True)
@@ -690,17 +683,11 @@ def test_summary_j6_common_has_no_reportes_line(db, household_clean, frozen_toda
     assert '→ reportés' not in html
 
 
-def test_summary_pre_j6_common_keeps_reportes_line(db, household_clean):
-    h = household_clean
-    _deficit_setup(db, h, h.common)
-    html = h.client_a.get('/plan').get_data(as_text=True)
-    assert 'Découvert à résorber' in html and 'Préréglage' in html
-    assert 'dont' not in html.split('Découvert à résorber')[1].split('</div>')[0]
-
-
 # --- review fixes ---------------------------------------------------------------------------
 
-def test_personal_actions_work_when_start_days_differ(db, household_clean, frozen_today):
+def test_personal_actions_work_when_start_days_differ(db, household_clean, frozen_today, monkeypatch):
+    from app.services import ceiling_service
+    monkeypatch.setattr(ceiling_service, 'personal_waiting', lambda *a: False)  # common plan validated
     h = household_clean
     h.personal_a.income_start_day = 10     # today = 15th: personal window (Jul, Aug) differs from common (Jun, Jul)
     db.session.commit()
@@ -822,3 +809,15 @@ def test_transfers_bar_has_no_personal_figures(db, household_clean, frozen_today
     bar = html[html.index('id="transfers-bar-'):]
     bar = bar[:bar.index('</div>')]
     assert '4321' not in bar and '4 321' not in bar and 'Loisirs A' not in bar
+
+
+def test_daily_pace_alerts_skip_common_month_without_plan(app, db, household_clean, monkeypatch):
+    from app.services import alert_service
+    h = household_clean
+    _cat(db, h.common, 'Courses', pct=0.5, floor=100.0)
+    current_budget_month(h.common, date.today())   # common month exists, no contribution plan
+    seen = []
+    monkeypatch.setattr(alert_service, 'check_alerts_for_pot',
+                        lambda pot, *a, **kw: seen.append(pot.id) or [])
+    alert_service.run_daily_alerts(app)
+    assert h.common.id not in seen
