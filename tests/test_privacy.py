@@ -450,3 +450,30 @@ def test_simulation_never_shows_partner_figures(db, household_clean, frozen_toda
     assert sim.forecasts(h.user_b) == {}
     page_b = h.client_b.get('/plan').get_data(as_text=True)
     assert '1111' not in page_b and '1 111' not in page_b
+
+
+def test_plan_never_shows_payer_account_to_partner(db, household_clean, frozen_today):
+    from datetime import datetime as _dt
+    from app.models import BankAccount
+    from app.services.pointage_service import classify
+    from tests.test_advance import _plan_with_loan
+    h = household_clean
+    y, m, pret = _plan_with_loan(db, h)
+    acc = BankAccount(pot_id=h.personal_a.id, name='Perso secret A', bank_name='Banque secrète',
+                      balance_value=4321.0, balance_booked=4321.0, balance_at=_dt(2026, 6, 15, 6, 0))
+    _db.session.add(acc)
+    _db.session.commit()
+    op = Operation(pot_id=h.personal_a.id, bank_account_id=acc.id, user_id=h.user_a.id, amount=800.0,
+                   date=datetime.date(2026, 6, 5), bank_date=datetime.date(2026, 6, 5),
+                   direction='debit', bank_reference='PRET', bank_label='PRLV PRET')
+    _db.session.add(op)
+    _db.session.commit()
+    classify(op, h.user_a, 'category', category=pret)
+    h.client_b.post(f'/pots/{h.common.id}/select')
+    for url in ('/plan', '/', '/operations/pointage?tab=rapproches', '/history'):
+        html = h.client_b.get(url).get_data(as_text=True)
+        flat = html.replace(' ', '').replace('\xa0', '').replace(' ', '')
+        assert 'Perso secret A' not in html and 'Banque secrète' not in html, url
+        assert '4321' not in flat, url
+        assert 'chargespayéesdirectement' not in flat, url
+        assert '2100' not in flat, url    # A's gross share

@@ -129,6 +129,22 @@ def round_shares(shares, caps):
     return out
 
 
+def effective_caps(caps, advances):
+    """A cap bounds what leaves the personal account (the transfer): the share may exceed it by
+    the charges the member pays directly for the common pot."""
+    return {u: (c + advances.get(u, 0.0) if c is not None else None) for u, c in caps.items()}
+
+
+def to_transfers(shares, advances):
+    """What each member transfers: share − charges paid from their personal account, rounded up
+    to the euro, never below 0. Shared by the real plan and the simulation."""
+    out = {}
+    for uid, share in shares.items():
+        net = share - advances.get(uid, 0.0)
+        out[uid] = float(math.ceil(round(net, 6))) if net > 0 else 0.0
+    return out
+
+
 def shortfall_from_split(bases, shares, uncovered):
     """Amount by which contributors' shares exceed what their bases allow, plus what nobody
     could absorb because of the caps. Shared by the real plan and the simulation."""
@@ -186,6 +202,10 @@ def member_cap(user, year, month, today, salary_in_balance=None, salary=None):
         current_common = target_budget_month(today, common.income_start_day or 1)
         if current_common != (year, month):   # the plan being capped is not an earlier debt
             projection -= due_for(pot, *current_common) or 0.0
+        # charges paid for the common pot from this account, still to be debited
+        projection -= advance_pending(common, user, *current_common)
+        if current_common < (year, month):
+            projection -= advance_for(common, user)
 
     overdraft = sum(a.overdraft_limit or 0.0 for a in
                     BankAccount.query.filter_by(pot_id=pot.id, archived=False))
@@ -213,6 +233,17 @@ def _members(common):
 
 def _common_of(personal_pot):
     return Pot.query.filter_by(household_id=personal_pot.household_id, kind='common').first()
+
+
+def advance_locked(common, today):
+    """A validated plan for the current common month or later: payer and amount of a charge paid
+    from a personal account are frozen with it (reopen the plan to change them)."""
+    cur = target_budget_month(today, common.income_start_day or 1)
+    return ContributionPlan.query.filter(
+        ContributionPlan.pot_id == common.id, ContributionPlan.status == 'validated',
+        db.or_(ContributionPlan.year > cur[0],
+               db.and_(ContributionPlan.year == cur[0], ContributionPlan.month >= cur[1])),
+    ).first() is not None
 
 
 def target_month(common, today):
@@ -423,21 +454,67 @@ def caps(plan):
     return {c.user_id: c.cap for c in plan.caps}
 
 
+def advance_for(common, user):
+    """Σ common fixed charges paid from `user`'s personal account (live settings)."""
+    return float(sum(c.amount or 0.0 for c in Category.query.filter(
+        Category.pot_id == common.id, Category.paid_by_user_id == user.id,
+        Category.type.in_(('fixed_auto', 'fixed_amount')))))
+
+
+def advances(plan):
+    """{user_id: charges paid directly}: frozen in ContributionShare once validated, else live."""
+    if plan.status == 'validated' and plan.shares:
+        return {s.user_id: s.advance or 0.0 for s in plan.shares}
+    return {u.id: advance_for(plan.pot, u) for u in _members(plan.pot)}
+
+
+def advance_pending(common, user, year, month):
+    """Part of the charges paid from `user`'s personal account not yet debited in common month M:
+    planned amount − debits from the user's personal accounts classified on the category."""
+    from app.models.bank_account import BankAccount
+    from app.models.operation import Operation
+    from app.services.budget_service import budget_month_bounds
+    pot = Pot.query.filter_by(owner_id=user.id, kind='personal').first()
+    if pot is None:
+        return 0.0
+    start, end = budget_month_bounds(common, year, month)
+    total = 0.0
+    for cat in Category.query.filter(Category.pot_id == common.id, Category.paid_by_user_id == user.id,
+                                     Category.type.in_(('fixed_auto', 'fixed_amount'))):
+        debited = db.session.query(db.func.sum(Operation.amount)).join(
+            BankAccount, Operation.bank_account_id == BankAccount.id).filter(
+            Operation.category_id == cat.id, Operation.direction == 'debit',
+            Operation.classification == 'category', BankAccount.pot_id == pot.id,
+            Operation.date >= start, Operation.date < end).scalar() or 0.0
+        total += max(0.0, (cat.amount or 0.0) - float(debited))
+    return round(total, 2)
+
+
+def _caps(plan):
+    return effective_caps(caps(plan), advances(plan))
+
+
 def split_raw(plan):
     """(shares, adjusted, uncovered) of the live plan, caps included, in cents (unrounded)."""
-    return split_with_caps(bases(plan), need(plan).total, caps(plan))
+    return split_with_caps(bases(plan), need(plan).total, _caps(plan))
 
 
 def split(plan):
-    """Like `split_raw` with the shares rounded up to the euro (what members transfer)."""
+    """Like `split_raw` with the shares rounded up to the euro."""
     shares_, adjusted_, uncovered = split_raw(plan)
-    return round_shares(shares_, caps(plan)), adjusted_, uncovered
+    return round_shares(shares_, _caps(plan)), adjusted_, uncovered
 
 
 def shares(plan):
+    """Each member's share of the need (equal reste à vivre), before charges paid directly."""
     if plan.status == 'validated' and plan.shares:
         return {s.user_id: s.amount for s in plan.shares}
     return split(plan)[0]
+
+
+def transfers(plan):
+    """What each member transfers to the common pot (share − charges paid directly)."""
+    return to_transfers(shares(plan), advances(plan))
 
 
 def adjusted(plan):
@@ -448,6 +525,7 @@ def adjusted(plan):
 def expected_contributions(pot, year, month):
     """Σ contributions of a J6 common month (they are the pot's income there), else 0."""
     plan = get_plan(pot, year, month) if pot.kind == 'common' else None
+    # shares, not transfers: charges paid directly from a personal account fund their category too
     return float(sum(shares(plan).values())) if plan is not None else 0.0
 
 
@@ -463,7 +541,7 @@ def shortfall_with_dynamic(plan, dynamic):
     v = monthly_share(rplan) if rplan is not None else 0.0
     total = need_for(plan.pot, plan.year, plan.month, bases(plan), plan.position,
                      sum(a.amount for a in plan.allocations), v, dynamic=dynamic).total
-    shares_, _, uncovered = split_with_caps(bases(plan), total, caps(plan))
+    shares_, _, uncovered = split_with_caps(bases(plan), total, _caps(plan))
     return shortfall_from_split(bases(plan), shares_, uncovered)
 
 
@@ -490,28 +568,32 @@ def contribution_for(personal_pot, year, month):
     plan = get_plan(common, year, month) if common is not None else None
     if plan is None:
         return None
-    return shares(plan).get(personal_pot.owner_id, 0.0)
+    return transfers(plan).get(personal_pot.owner_id, 0.0)
 
 
 @dataclass
 class MemberContribution:
     user: User
-    amount: float
+    amount: float      # transfer (share − advance)
     received: float
     due: float
     validated: bool
+    share: float = 0.0
+    advance: float = 0.0
 
 
 def member_status(plan):
     """Per member (by user id): contribution, received on the common pot this month, still due."""
     from app.services.pointage_service import contribution_received
-    amounts = shares(plan)
+    shares_, advances_ = shares(plan), advances(plan)
+    amounts = to_transfers(shares_, advances_)
     out = []
     for u in _members(plan.pot):
         amount = amounts.get(u.id, 0.0)
         received = contribution_received(plan.pot, u, plan.year, plan.month)
         out.append(MemberContribution(u, amount, received, max(0.0, amount - received),
-                                      is_validated_by(plan, u)))
+                                      is_validated_by(plan, u), shares_.get(u.id, 0.0),
+                                      advances_.get(u.id, 0.0)))
     return out
 
 
@@ -535,7 +617,7 @@ def snapshot(share_map):
 def is_validated_by(plan, user):
     if plan.status == 'validated':
         return True
-    current = snapshot(shares(plan))
+    current = snapshot(transfers(plan))
     return any(v.user_id == user.id and v.snapshot == current for v in plan.validations)
 
 
@@ -545,7 +627,8 @@ def validate(plan, user, today, seen_snapshot=None):
     if plan.status == 'validated':
         raise ContributionError('Le plan est déjà validé.')
     current = shares(plan)
-    snap = snapshot(current)
+    advances_ = advances(plan)
+    snap = snapshot(to_transfers(current, advances_))
     if seen_snapshot is not None and seen_snapshot != snap:
         raise ContributionError('stale')
     row = next((v for v in plan.validations if v.user_id == user.id), None)
@@ -559,7 +642,8 @@ def validate(plan, user, today, seen_snapshot=None):
         return False
     negative = shortfall(plan) > 0
     for uid, amount in current.items():
-        db.session.add(ContributionShare(plan_id=plan.id, user_id=uid, amount=amount))
+        db.session.add(ContributionShare(plan_id=plan.id, user_id=uid, amount=amount,
+                                         advance=advances_.get(uid, 0.0)))
     plan.solidarity_adjusted = split(plan)[1]
     from app.services import ceiling_service
     ceiling_service.freeze(plan.pot, plan.year, plan.month, commit=False)  # before 'validated': extra cut applies

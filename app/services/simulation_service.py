@@ -93,7 +93,11 @@ def simulate(common, user, today):
     rplan = get_refloat(common, year, month) or cs.new_refloat_plan(common, year, month, position)
     refloat_v = monthly_share(rplan) * rplan.split
     total_need = cs.need_for(common, year, month, bases, position, 0.0, refloat_v).total
-    caps = {u.id: cs.member_cap(u, year, month, today, salary=typed.get(u.id, 0.0)) for u in members}
+    advances = {u.id: cs.advance_for(common, u) for u in members}
+    caps = cs.effective_caps(
+        {u.id: cs.member_cap(u, year, month, today, salary=typed.get(u.id, 0.0)) for u in members},
+        advances)
     shares, adjusted, uncovered = cs.split_with_caps(bases, total_need, caps)
     shortfall = cs.shortfall_from_split(bases, shares, uncovered)
-    return Simulation(year, month, label, cs.round_shares(shares, caps), adjusted, shortfall)
+    return Simulation(year, month, label, cs.to_transfers(cs.round_shares(shares, caps), advances),
+                      adjusted, shortfall)

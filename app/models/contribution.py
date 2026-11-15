@@ -52,7 +52,9 @@ class ContributionShare(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('contribution_plan.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    amount = db.Column(db.Double, nullable=False, default=0.0)
+    amount = db.Column(db.Double, nullable=False, default=0.0)   # share of the need (equal RAV)
+    # charges this member paid for the common pot from a personal account, frozen at validation
+    advance = db.Column(db.Double, nullable=False, default=0.0, server_default='0')
 
     plan = db.relationship('ContributionPlan', back_populates='shares')
 
