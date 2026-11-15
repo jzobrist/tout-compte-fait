@@ -193,7 +193,7 @@ def _contribution_base(pot, today, bm, j6_plan, requested, user):
     view.update(
         need=need, position=plan.position, members=cs.member_status(plan), shortfall=cs.shortfall(plan), adjusted=cs.adjusted(plan),
         me_validated=user is not None and cs.is_validated_by(plan, user), allocations=allocations,
-        snapshot=cs.snapshot(cs.shares(plan)),
+        snapshot=cs.snapshot(cs.transfers(plan)),
         can_reopen=plan.status == 'validated'
         and today < budget_month_start(pot, *_next(plan.year, plan.month)))
     return view
@@ -207,7 +207,8 @@ def _my_contribution(pot, year, month):
     common = _common_pot(pot.household_id)
     plan = cs.get_plan(common, year, month)
     return dict(amount=amount, status='validé' if plan.status == 'validated' else 'provisoire',
-                due=cs.due_for(pot, year, month))
+                due=cs.due_for(pot, year, month), share=cs.shares(plan).get(pot.owner_id, 0.0),
+                advance=cs.advances(plan).get(pot.owner_id, 0.0))
 
 
 def _prepare_j6(pot, today):

@@ -106,3 +106,96 @@ def test_paid_by_locked_when_plan_validated(db, household_clean, today, mail_out
     assert (pret.paid_by_user_id, pret.amount) == (h.user_a.id, 800.0)
     _set(h.user_a, charges, amount=2100.0)
     assert charges.amount == 2100.0
+
+
+# --- Task 2: advances and transfers ------------------------------------------------------------
+
+def _ref(db, h, a=3000.0, b=2000.0, payer='a'):
+    """Reference: bases a/b, common Charges 2000 + Prêt 800 paid by `payer`, plan prepared."""
+    _ccat(db, h.common, 'Charges', 'fixed_amount', amount=2000.0)
+    pret = _pret(db, h)
+    pret.paid_by_user_id = (h.user_a if payer == 'a' else h.user_b).id
+    _db.session.commit()
+    plan = _ready(db, h, a=a, b=b)
+    return plan, pret
+
+
+def test_shares_unchanged_transfers_net_of_advance(db, household_clean):
+    h = household_clean
+    plan, _ = _ref(db, h)
+    A, B = h.user_a.id, h.user_b.id
+    assert cs.shares(plan) == {A: 1900.0, B: 900.0}
+    assert cs.transfers(plan) == {A: 1100.0, B: 900.0}
+    a = next(m for m in cs.member_status(plan) if m.user.id == A)
+    assert (a.amount, a.share, a.advance, a.due) == (1100.0, 1900.0, 800.0, 1100.0)
+
+
+def test_advance_frozen_at_validation(db, household_clean, mail_outbox):
+    from app.models import ContributionShare
+    h = household_clean
+    plan, pret = _ref(db, h)
+    cs.validate(plan, h.user_a, TODAY)
+    cs.validate(plan, h.user_b, TODAY)
+    row = ContributionShare.query.filter_by(plan_id=plan.id, user_id=h.user_a.id).one()
+    assert (row.amount, row.advance) == (1900.0, 800.0)
+    pret.amount = 900.0
+    _db.session.commit()
+    assert cs.transfers(plan)[h.user_a.id] == 1100.0
+
+
+def test_advance_larger_than_share_gives_zero(db, household_clean):
+    h = household_clean
+    plan, _ = _ref(db, h, a=1000.0, b=4000.0)
+    assert cs.shares(plan)[h.user_a.id] < 800.0
+    assert cs.transfers(plan)[h.user_a.id] == 0.0
+    a = next(m for m in cs.member_status(plan) if m.user.id == h.user_a.id)
+    assert a.due == 0.0
+
+
+def test_two_categories_same_payer_add_up(db, household_clean):
+    h = household_clean
+    ins = _ccat(db, h.common, 'Assurance', 'fixed_auto', amount=50.0)
+    ins.paid_by_user_id = h.user_a.id
+    _db.session.commit()
+    plan, _ = _ref(db, h)
+    assert cs.advances(plan)[h.user_a.id] == 850.0
+
+
+def test_cap_applies_to_transfer(db, household_clean):
+    from app.models import ContributionCap
+    h = household_clean
+    plan, _ = _ref(db, h)
+    for c in plan.caps:
+        c.cap = 500.0 if c.user_id == h.user_a.id else None
+    if not plan.caps:
+        _db.session.add(ContributionCap(plan_id=plan.id, user_id=h.user_a.id, cap=500.0))
+    _db.session.commit()
+    _db.session.refresh(plan)
+    assert cs.shares(plan)[h.user_a.id] == 1300.0
+    assert cs.transfers(plan)[h.user_a.id] == 500.0
+
+
+def test_snapshot_uses_transfers_and_goes_stale(db, household_clean):
+    h = household_clean
+    plan, pret = _ref(db, h)
+    seen = cs.snapshot(cs.transfers(plan))
+    pret.paid_by_user_id = h.user_b.id
+    _db.session.commit()
+    with pytest.raises(cs.ContributionError, match='stale'):
+        cs.validate(plan, h.user_a, TODAY, seen_snapshot=seen)
+
+
+def test_simulation_net_of_advance(db, household_clean):
+    from app.services import simulation_service as sim
+    from app.services.budget_service import get_or_create_budget_month
+    h = household_clean
+    _ccat(db, h.common, 'Charges', 'fixed_amount', amount=2000.0)
+    pret = _pret(db, h)
+    pret.paid_by_user_id = h.user_a.id
+    _account(db, h.common, 0.0)
+    get_or_create_budget_month(h.common.id, 2026, 10)
+    sim.save_forecast(h.user_a, h.user_a.id, 3000.0)
+    sim.save_forecast(h.user_a, h.user_b.id, 2000.0)
+    result = sim.simulate(h.common, h.user_a, TODAY)
+    assert result.error is None
+    assert result.shares == {h.user_a.id: 1100.0, h.user_b.id: 900.0}
