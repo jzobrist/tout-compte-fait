@@ -5,7 +5,7 @@
 {% else %}
 <ul class="list-unstyled mt-2 mb-1">
   {% for u in s.members %}
-  <li>{{ u.display_name }} devrait virer <strong>{{ r.shares.get(u.id, 0)|round(2) }}</strong> €</li>
+  <li>{{ u.display_name }} devrait virer <strong>{{ r.shares.get(u.id, 0)|euros }}</strong> €</li>
   {% endfor %}
 </ul>
 {% if r.adjusted %}<p class="small text-secondary mb-0">Montants ajustés par solidarité</p>{% endif %}

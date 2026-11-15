@@ -228,12 +228,23 @@ def compute_daily_metrics(budget_month, category, current_day, days_in_month, sp
     ideal_daily = effective / days_in_month if days_in_month > 0 else 0.0
     ideal_cumulated = effective * current_day / days_in_month if days_in_month > 0 else 0.0
     days_remaining = max(1, days_in_month - current_day)
-    remaining_daily = max(0.0, (effective - spent) / days_remaining)
+    balance = effective - spent
+    if category.role == 'common_transfer':
+        # what is really still owed (the plan's due, lowered by other members' extra transfers,
+        # + charges paid for the common pot not yet debited), as in free money
+        from app.services import contribution_service as cs
+        pot = budget_month.pot or db.session.get(Pot, budget_month.pot_id)
+        due = cs.due_for(pot, budget_month.year, budget_month.month)
+        if due is not None:
+            owner = db.session.get(User, pot.owner_id)
+            balance = due + cs.advance_pending(cs._common_of(pot), owner,
+                                               budget_month.year, budget_month.month)
+    remaining_daily = max(0.0, balance / days_remaining)
     return {
         'effective': effective,
         'ideal_daily': ideal_daily,
         'ideal_cumulated': ideal_cumulated,
         'remaining_daily': remaining_daily,
         'spent': spent,
-        'balance': effective - spent,
+        'balance': balance,
     }
