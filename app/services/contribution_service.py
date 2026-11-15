@@ -529,6 +529,46 @@ def expected_contributions(pot, year, month):
     return float(sum(shares(plan).values())) if plan is not None else 0.0
 
 
+@dataclass
+class CommonIncome:
+    received: float   # money really brought to the common pot during the month
+    expected: float   # transfers and charges paid from a personal account still to come
+
+
+def _paid_from_personal(common, year, month):
+    """Net spent (debits − refunds) on common categories through personal bank accounts."""
+    from app.models.bank_account import BankAccount
+    from app.models.operation import Operation
+    from app.services.budget_service import budget_month_bounds
+    start, end = budget_month_bounds(common, year, month)
+    signed = db.case((Operation.direction == 'credit', -Operation.amount), else_=Operation.amount)
+    total = db.session.query(db.func.sum(signed)).join(
+        BankAccount, Operation.bank_account_id == BankAccount.id).join(
+        Pot, BankAccount.pot_id == Pot.id).filter(
+        Operation.pot_id == common.id, Pot.kind == 'personal',
+        db.or_(db.and_(Operation.direction == 'debit', Operation.classification == 'category'),
+               db.and_(Operation.direction == 'credit', Operation.classification == 'refund')),
+        Operation.date >= start, Operation.date < end).scalar()
+    return float(total or 0.0)
+
+
+def common_income(common, year, month):
+    """Common « Revenus »: everything really received (incomes, contributions — extra ones
+    included, never shared out — and common charges paid from a personal account), plus what the
+    plan still expects (transfers due and charges paid from a personal account not yet debited)."""
+    from app.services.pointage_service import contribution_received
+    bm = BudgetMonth.query.filter_by(pot_id=common.id, year=year, month=month).first()
+    received = (float(bm.total_income or 0.0) if bm is not None else 0.0) \
+        + sum(contribution_received(common, u, year, month) for u in _members(common)) \
+        + _paid_from_personal(common, year, month)
+    plan = get_plan(common, year, month)
+    expected = 0.0
+    if plan is not None:
+        expected = sum(m.due + advance_pending(common, m.user, year, month)
+                       for m in member_status(plan))
+    return CommonIncome(round(received, 2), round(expected, 2))
+
+
 def shortfall(plan):
     shares_, _, uncovered = split_raw(plan)
     return shortfall_from_split(bases(plan), shares_, uncovered)

@@ -357,7 +357,8 @@ def test_daily_pace_alerts_run_for_j6_common_month(app, db, household_clean, fro
     assert h.common.id in seen
 
 
-def test_dashboard_common_j6_month_shows_contributions_as_revenus(db, household_clean, frozen_today):
+def test_dashboard_common_j6_month_shows_expected_contributions(db, household_clean, frozen_today):
+    """Revenus = money received (none yet); the plan's transfers show as « attendus »."""
     from app.models import ContributionPlan
     from app.services import contribution_service as cs
     h = household_clean
@@ -368,9 +369,10 @@ def test_dashboard_common_j6_month_shows_contributions_as_revenus(db, household_
     _select(h.client_a, h.common)
     html = h.client_a.get(f'/?year={plan.year}&month={plan.month}').get_data(as_text=True)
     expected = f"{total:,.2f}".replace(',', ' ').replace('.', ',')
-    assert f'{expected}€' in html
+    assert '>0,00€</div>' in html
+    assert f'+ {expected} € attendus' in html
     from app.routes.dashboard import _build_chart_data
-    assert _build_chart_data(h.common, plan.year, plan.month, 1)['incomes'] == [pytest.approx(total)]
+    assert _build_chart_data(h.common, plan.year, plan.month, 1)['incomes'] == [0.0]
 
 
 # --- Simulation du plan à venir -----------------------------------------------------------------

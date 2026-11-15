@@ -1,0 +1,112 @@
+"""Common « Revenus » = money really received; contributions made before the first plan count."""
+from datetime import date, datetime
+
+import pytest
+
+from app.extensions import db as _db
+from app.models import BankAccount, ContributionPlan, Operation
+from app.services import contribution_service as cs
+from app.services.pointage_service import contribution_received
+from tests.test_advance import _ref
+from tests.test_contribution_service import M, TODAY, _ready  # noqa: F401
+
+
+def _acc(pot):
+    acc = BankAccount.query.filter_by(pot_id=pot.id).first()
+    if acc is None:
+        acc = BankAccount(pot_id=pot.id, name='Perso', bank_name='B')
+        _db.session.add(acc)
+        _db.session.commit()
+    return acc
+
+
+_refs = iter(range(10_000))
+
+
+def _contribution(h, user, amount, day):
+    op = Operation(pot_id=h.common.id, user_id=user.id, amount=amount, date=day, label='VIR',
+                   direction='credit', bank_account_id=_acc(h.common).id, bank_label='VIR',
+                   bank_date=day, bank_reference=f'C{next(_refs)}', classification='contribution',
+                   contributor_id=user.id)
+    _db.session.add(op)
+    _db.session.commit()
+    return op
+
+
+def _perso_debit(h, user_pot, user, category, amount, day):
+    op = Operation(pot_id=h.common.id, user_id=user.id, amount=amount, date=day, label='CB',
+                   direction='debit', bank_account_id=_acc(user_pot).id, bank_label='CB',
+                   bank_date=day, bank_reference=f'D{next(_refs)}', classification='category',
+                   category_id=category.id)
+    _db.session.add(op)
+    _db.session.commit()
+    return op
+
+
+# --- contributions made before the first plan --------------------------------------------------
+
+def test_contribution_before_first_plan_counts_from_month_start(db, household_clean):
+    h = household_clean
+    h.common.income_start_day = 26          # November = 26/10 → 25/11
+    _db.session.commit()
+    plan = _ready(db, h)                    # prepared on 15/11, no October plan
+    assert plan is not None and plan.created_at.date() > date(2026, 10, 29)
+    _contribution(h, h.user_a, 2000.0, date(2026, 10, 29))
+    _contribution(h, h.user_a, 50.0, date(2026, 10, 20))     # before the month: not counted
+    assert contribution_received(h.common, h.user_a, *M) == pytest.approx(2000.0)
+
+
+def test_contribution_before_plan_belongs_to_previous_plan_when_it_exists(db, household_clean):
+    h = household_clean
+    h.common.income_start_day = 26
+    _db.session.add(ContributionPlan(pot_id=h.common.id, year=2026, month=10,
+                                     created_at=datetime(2026, 9, 26, 8, 0)))
+    _db.session.commit()
+    plan = _ready(db, h)
+    assert plan is not None
+    _contribution(h, h.user_a, 2000.0, date(2026, 10, 29))
+    assert contribution_received(h.common, h.user_a, *M) == 0.0
+    assert contribution_received(h.common, h.user_a, 2026, 10) == pytest.approx(2000.0)
+
+
+# --- common « Revenus » ------------------------------------------------------------------------
+
+def test_common_income_before_any_transfer_is_all_expected(db, household_clean):
+    h = household_clean
+    _ref(db, h)                              # transfers A 1100, B 900, Prêt 800 paid by A
+    inc = cs.common_income(h.common, *M)
+    assert inc.received == 0.0
+    assert inc.expected == pytest.approx(2800.0)
+
+
+def test_common_income_counts_extra_transfer_and_charges_paid_from_perso(db, household_clean):
+    h = household_clean
+    _, pret = _ref(db, h)
+    _contribution(h, h.user_a, 1500.0, date(2026, 11, 16))   # 400 € more than the transfer
+    _perso_debit(h, h.personal_a, h.user_a, pret, 800.0, date(2026, 11, 5))
+    inc = cs.common_income(h.common, *M)
+    assert inc.received == pytest.approx(2300.0)              # 1500 + 800, nothing shared out
+    assert inc.expected == pytest.approx(900.0)               # B's transfer only
+
+
+def test_common_income_without_plan(db, household_clean):
+    h = household_clean
+    inc = cs.common_income(h.common, *M)
+    assert (inc.received, inc.expected) == (0.0, 0.0)
+
+
+def test_dashboard_common_revenus_shows_received_and_expected(db, household_clean, monkeypatch):
+    import app.routes.dashboard as dash
+
+    class _D(date):
+        @classmethod
+        def today(cls):
+            return TODAY
+    monkeypatch.setattr(dash, 'date', _D)
+    h = household_clean
+    _ref(db, h)
+    _contribution(h, h.user_b, 900.0, date(2026, 11, 16))
+    h.client_a.post(f'/pots/{h.common.id}/select')
+    html = h.client_a.get('/').get_data(as_text=True)
+    assert '>900,00€</div>' in html                          # received: B's transfer
+    assert '+ 1 900,00 € attendus' in html                   # A's transfer 1100 + Prêt 800
