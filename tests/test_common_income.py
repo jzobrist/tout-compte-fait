@@ -86,7 +86,7 @@ def test_common_income_counts_extra_transfer_and_charges_paid_from_perso(db, hou
     _perso_debit(h, h.personal_a, h.user_a, pret, 800.0, date(2026, 11, 5))
     inc = cs.common_income(h.common, *M)
     assert inc.received == pytest.approx(2300.0)              # 1500 + 800, nothing shared out
-    assert inc.expected == pytest.approx(900.0)               # B's transfer only
+    assert inc.expected == pytest.approx(500.0)               # B's 900 − A's 400 extra
 
 
 def test_common_income_without_plan(db, household_clean):
@@ -139,3 +139,34 @@ def test_position_keeps_envelopes_of_a_used_previous_month(db, household_clean):
     _db.session.commit()
     plan = _ready(db, h, balance=500.0)
     assert plan.position == pytest.approx(500.0 - 800.0)   # 800 € of October rent still to pay
+
+
+# --- a member's extra transfer lowers what the others still owe ----------------------------------
+
+def _dues(plan):
+    return {m.user.id: m.due for m in cs.member_status(plan)}
+
+
+def test_extra_transfer_lowers_the_other_members_due(db, household_clean):
+    h = household_clean
+    plan, _ = _ref(db, h)                                    # transfers A 1100, B 900
+    _contribution(h, h.user_b, 1500.0, date(2026, 11, 16))   # 600 € more than B's transfer
+    assert _dues(plan) == {h.user_a.id: pytest.approx(500.0), h.user_b.id: 0.0}
+    from app.services.balance_service import free_money
+    from app.services.budget_service import get_or_create_budget_month
+    fm = free_money(h.common, get_or_create_budget_month(h.common.id, *M))
+    assert fm.transfer_expected == pytest.approx(500.0)
+
+
+def test_extra_transfer_beyond_the_others_due_is_surplus(db, household_clean):
+    h = household_clean
+    plan, _ = _ref(db, h)
+    _contribution(h, h.user_b, 3000.0, date(2026, 11, 16))
+    assert _dues(plan) == {h.user_a.id: 0.0, h.user_b.id: 0.0}
+    assert cs.common_income(h.common, *M).received == pytest.approx(3000.0)
+
+
+def test_offset_dues_prorata():
+    assert cs.offset_dues({1: 100.0, 2: 300.0, 3: 0.0}, 200.0) == {1: 50.0, 2: 150.0, 3: 0.0}
+    assert cs.offset_dues({1: 100.0, 2: 300.0}, 0.0) == {1: 100.0, 2: 300.0}
+    assert cs.offset_dues({1: 100.0, 2: 300.0}, 999.0) == {1: 0.0, 2: 0.0}
