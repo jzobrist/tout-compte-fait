@@ -307,6 +307,16 @@ def balance_fresh(common, today):
     return balance.known and balance.as_of is not None and balance.as_of.date() >= today - timedelta(days=1)
 
 
+def _month_used(common, year, month):
+    """True when an operation of the common pot was classified during budget month (year, month)."""
+    from app.models.operation import Operation
+    from app.services.budget_service import budget_month_bounds
+    start, end = budget_month_bounds(common, year, month)
+    return db.session.query(Operation.id).filter(
+        Operation.pot_id == common.id, Operation.classification.isnot(None),
+        Operation.date >= start, Operation.date < end).first() is not None
+
+
 def measure_position(common, year, month, today):
     """Common free money at the end of M-1 minus the flows of M already in the balance.
 
@@ -320,9 +330,14 @@ def measure_position(common, year, month, today):
     prev_bm = BudgetMonth.query.filter_by(pot_id=common.id, year=prev_year, month=prev_month).first()
     if prev_bm is None:
         return None
-    position = free_money(common, prev_bm).value
+    fm = free_money(common, prev_bm)
+    position = fm.value
     if position is None:
         return None
+    if get_plan(common, prev_year, prev_month) is None and not _month_used(common, prev_year, prev_month):
+        # M-1 was never used (no plan, nothing classified: first month of the household, created on
+        # the fly when preparing the plan): its envelopes will never be spent, they are no deficit
+        position += fm.remaining
     # the balance already holds the flows of month M (rent, incomes, contributions) when it has started
     return position - _month_flows_in_balance(common, year, month)
 
