@@ -78,7 +78,7 @@ def run_daily_alerts(app):
     with app.app_context():
         today = date.today()
         days_in_month = calendar.monthrange(today.year, today.month)[1]
-        from app.services.contribution_service import prepare_if_ready
+        from app.services.contribution_service import get_plan, prepare_if_ready
         for common in Pot.query.filter_by(kind='common').all():
             try:
                 prepare_if_ready(common, today)
@@ -97,7 +97,8 @@ def run_daily_alerts(app):
                 year=bm_year,
                 month=bm_month,
             ).first()
-            if not bm or (bm.total_income == 0 and pot.kind != 'common'):
+            if not bm or (bm.total_income == 0 and (pot.kind != 'common'
+                                                      or get_plan(pot, bm.year, bm.month) is None)):
                 continue
             cats = Category.query.filter_by(pot_id=pot.id).all()
             spent_by_cat = {

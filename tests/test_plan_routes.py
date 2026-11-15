@@ -809,3 +809,15 @@ def test_transfers_bar_has_no_personal_figures(db, household_clean, frozen_today
     bar = html[html.index('id="transfers-bar-'):]
     bar = bar[:bar.index('</div>')]
     assert '4321' not in bar and '4 321' not in bar and 'Loisirs A' not in bar
+
+
+def test_daily_pace_alerts_skip_common_month_without_plan(app, db, household_clean, monkeypatch):
+    from app.services import alert_service
+    h = household_clean
+    _cat(db, h.common, 'Courses', pct=0.5, floor=100.0)
+    current_budget_month(h.common, date.today())   # common month exists, no contribution plan
+    seen = []
+    monkeypatch.setattr(alert_service, 'check_alerts_for_pot',
+                        lambda pot, *a, **kw: seen.append(pot.id) or [])
+    alert_service.run_daily_alerts(app)
+    assert h.common.id not in seen
