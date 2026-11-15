@@ -233,8 +233,6 @@ def build_view(pot, today, year=None, month=None, user=None):
     plan = ensure_plan(pot, bm, today)
     has_deficit = plan is not None and plan.deficit > 0
     from app.services import ceiling_service
-    if pot.kind == 'common':
-        ceiling_service.freeze_legacy(pot, bm.year, bm.month)
     ceilings = ceiling_service.report(bm)
     order = {'dynamic': 0, 'fixed_amount': 1, 'fixed_auto': 1}
     cats = sorted(Category.query.filter_by(pot_id=pot.id).all(),

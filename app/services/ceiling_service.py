@@ -48,28 +48,9 @@ def get_plan(pot, year, month):
     return EnvelopePlan.query.filter_by(pot_id=pot.id, year=year, month=month).first()
 
 
-def _legacy_validated(pot, year, month):
-    """Common month whose ContributionPlan is validated: its shares are frozen, so are its ceilings
-    (also for plans validated before this feature, which have no EnvelopePlan)."""
-    if pot.kind != 'common':
-        return False
-    from app.services import contribution_service as cs
-    cplan = cs.get_plan(pot, year, month)
-    return cplan is not None and cplan.status == 'validated'
-
-
 def is_frozen(pot, year, month):
     plan = get_plan(pot, year, month)
-    return (plan is not None and plan.validated_at is not None) or _legacy_validated(pot, year, month)
-
-
-def freeze_legacy(pot, year, month):
-    """Store the ceilings of a common month validated before this feature (lazy, idempotent)."""
-    if not _legacy_validated(pot, year, month):
-        return
-    plan = get_plan(pot, year, month)
-    if plan is None or plan.validated_at is None:
-        freeze(pot, year, month)
+    return plan is not None and plan.validated_at is not None
 
 
 def pin_current(pot, year, month, category, commit=True):
