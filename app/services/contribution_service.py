@@ -215,6 +215,17 @@ def _common_of(personal_pot):
     return Pot.query.filter_by(household_id=personal_pot.household_id, kind='common').first()
 
 
+def advance_locked(common, today):
+    """A validated plan for the current common month or later: payer and amount of a charge paid
+    from a personal account are frozen with it (reopen the plan to change them)."""
+    cur = target_budget_month(today, common.income_start_day or 1)
+    return ContributionPlan.query.filter(
+        ContributionPlan.pot_id == common.id, ContributionPlan.status == 'validated',
+        db.or_(ContributionPlan.year > cur[0],
+               db.and_(ContributionPlan.year == cur[0], ContributionPlan.month >= cur[1])),
+    ).first() is not None
+
+
 def target_month(common, today):
     c = current_budget_month(common, today)
     return _target_after(common, (c.year, c.month))

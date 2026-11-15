@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, or_
 
@@ -144,8 +144,30 @@ def check_name_free(user, name, pots, exclude=None):
     return to_absorb
 
 
+def _paid_by(cat, pot, settings):
+    """Validated payer id (or None) for a common fixed charge paid from a personal account."""
+    from app.models import User
+    wanted = settings.get('paid_by', cat.paid_by_user_id) or None
+    if wanted is None:
+        return None
+    member = db.session.get(User, int(wanted))
+    if (not pot.is_common or cat.type not in ('fixed_auto', 'fixed_amount')
+            or cat.role == 'common_transfer' or member is None
+            or member.household_id != pot.household_id):
+        raise CategoryError('Payeur invalide.')
+    return member.id
+
+
 def _apply_settings(cat, settings):
     pot = cat.pot or db.session.get(Pot, cat.pot_id)
+    paid_by = _paid_by(cat, pot, settings)
+    if pot.is_common and (paid_by or cat.paid_by_user_id):
+        from app.services.contribution_service import advance_locked
+        amount = settings.get('amount', cat.amount)
+        if ((paid_by != cat.paid_by_user_id or (amount or 0.0) != (cat.amount or 0.0))
+                and advance_locked(pot, date.today())):
+            raise CategoryError('Plan du mois validé : rouvrez-le pour changer ce réglage.')
+    cat.paid_by_user_id = paid_by
     for key in _SETTING_KEYS:
         if key in settings:
             setattr(cat, key, settings[key])
@@ -395,6 +417,7 @@ def change_type(user, category, type, commit=True):
         if type == 'dynamic':
             member.amount = None
             member.constrained = False
+            member.paid_by_user_id = None
         else:
             member.percentage = None
             member.min_amount = None
