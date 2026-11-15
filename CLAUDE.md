@@ -17,8 +17,8 @@ FLASK_APP=app flask run
 # or
 python run.py
 
-# Run all tests
-pytest
+# Run all tests (parallel, ~20 s; needs pip install -r requirements-dev.txt)
+pytest -q -n auto
 
 # Run a single test file / test
 pytest tests/test_operation_routes.py
