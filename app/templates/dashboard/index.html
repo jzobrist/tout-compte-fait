@@ -24,6 +24,7 @@
     <div class="kpi-card">
       <div class="kpi-label">Revenus</div>
       <div class="kpi-value" style="color: var(--primary);">{{ total_income|money }}€</div>
+      {% if income_expected > 0 %}<div class="small text-secondary">+ {{ income_expected|money }} € attendus</div>{% endif %}
     </div>
   </div>
   <div class="col-4">

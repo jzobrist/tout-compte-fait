@@ -141,13 +141,17 @@ def contribution_received(common_pot, user, year, month):
     """Contribution transfers received on the common pot from `user` for the month (year, month).
 
     A month runs from its plan's creation to the next plan's (transfers are made before the budget
-    month starts); 0 while the month has no plan.
+    month starts); 0 while the month has no plan. Without a previous plan, transfers made since the
+    start of the budget month count too (measure_position already keeps them out of the surplus).
     """
-    from app.services.contribution_service import _next, get_plan
+    from app.services.budget_service import budget_month_start
+    from app.services.contribution_service import _next, _prev, get_plan
     plan = get_plan(common_pot, year, month)
     if plan is None:
         return 0.0
     start = plan.created_at.date()
+    if get_plan(common_pot, *_prev(year, month)) is None:
+        start = min(start, budget_month_start(common_pot, year, month))
     end = None
     following = get_plan(common_pot, *_next(year, month))
     if following is not None:

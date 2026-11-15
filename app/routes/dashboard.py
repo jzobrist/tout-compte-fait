@@ -35,7 +35,7 @@ def index():
     current_day = today.day if (year == today.year and month == today.month) else days_in_month
 
     bm = get_or_create_budget_month(pot.id, year, month)
-    from app.services.contribution_service import expected_contributions
+    from app.services.contribution_service import common_income
     if bm.total_income > 0 or pot.kind == 'common':
         recalculate_budget_month(bm)
 
@@ -70,11 +70,16 @@ def index():
     fm = free_money(pot, bm) if is_current else None
 
     total_spent = sum(item['metrics']['spent'] for item in cat_data)
-    total_income = bm.total_income + expected_contributions(pot, year, month)
+    income_expected = 0.0
+    if pot.kind == 'common':
+        inc = common_income(pot, year, month)
+        total_income, income_expected = inc.received, inc.expected
+    else:
+        total_income = bm.total_income
     total_remaining = total_income - total_spent
 
     return render_template('dashboard/index.html',
-        bm=bm, total_income=total_income, cat_data=cat_data, alerts=alerts,
+        bm=bm, total_income=total_income, income_expected=income_expected, cat_data=cat_data, alerts=alerts,
         year=year, month=month, today=today,
         month_name=MONTHS_FR[month - 1].capitalize(),
         chart_data=chart_data,
@@ -102,7 +107,7 @@ def _next_month(year, month, current_bm_year, current_bm_month):
 
 def _build_chart_data(pot, year, month, n):
     """Build income vs spending data for last n months."""
-    from app.services.contribution_service import expected_contributions
+    from app.services.contribution_service import common_income
     months = []
     y, m = year, month
     for _ in range(n):
@@ -116,7 +121,10 @@ def _build_chart_data(pot, year, month, n):
     for y_i, m_i in months:
         labels.append(f"{MONTHS_FR_ABBR[m_i - 1]} {y_i}")
         bm = BudgetMonth.query.filter_by(pot_id=pot.id, year=y_i, month=m_i).first()
-        inc = (bm.total_income if bm else 0.0) + expected_contributions(pot, y_i, m_i)
+        if pot.kind == 'common':
+            inc = common_income(pot, y_i, m_i).received
+        else:
+            inc = bm.total_income if bm else 0.0
         spent = pot_spent_total(pot.id, y_i, m_i)
         incomes_data.append(inc)
         spendings_data.append(spent)
