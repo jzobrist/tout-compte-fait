@@ -202,6 +202,10 @@ def member_cap(user, year, month, today, salary_in_balance=None, salary=None):
         current_common = target_budget_month(today, common.income_start_day or 1)
         if current_common != (year, month):   # the plan being capped is not an earlier debt
             projection -= due_for(pot, *current_common) or 0.0
+        # charges paid for the common pot from this account, still to be debited
+        projection -= advance_pending(common, user, *current_common)
+        if current_common < (year, month):
+            projection -= advance_for(common, user)
 
     overdraft = sum(a.overdraft_limit or 0.0 for a in
                     BankAccount.query.filter_by(pot_id=pot.id, archived=False))
@@ -462,6 +466,28 @@ def advances(plan):
     if plan.status == 'validated' and plan.shares:
         return {s.user_id: s.advance or 0.0 for s in plan.shares}
     return {u.id: advance_for(plan.pot, u) for u in _members(plan.pot)}
+
+
+def advance_pending(common, user, year, month):
+    """Part of the charges paid from `user`'s personal account not yet debited in common month M:
+    planned amount − debits from the user's personal accounts classified on the category."""
+    from app.models.bank_account import BankAccount
+    from app.models.operation import Operation
+    from app.services.budget_service import budget_month_bounds
+    pot = Pot.query.filter_by(owner_id=user.id, kind='personal').first()
+    if pot is None:
+        return 0.0
+    start, end = budget_month_bounds(common, year, month)
+    total = 0.0
+    for cat in Category.query.filter(Category.pot_id == common.id, Category.paid_by_user_id == user.id,
+                                     Category.type.in_(('fixed_auto', 'fixed_amount'))):
+        debited = db.session.query(db.func.sum(Operation.amount)).join(
+            BankAccount, Operation.bank_account_id == BankAccount.id).filter(
+            Operation.category_id == cat.id, Operation.direction == 'debit',
+            Operation.classification == 'category', BankAccount.pot_id == pot.id,
+            Operation.date >= start, Operation.date < end).scalar() or 0.0
+        total += max(0.0, (cat.amount or 0.0) - float(debited))
+    return round(total, 2)
 
 
 def _caps(plan):

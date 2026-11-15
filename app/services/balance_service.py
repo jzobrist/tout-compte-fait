@@ -7,6 +7,7 @@ from app.models.bank_account import BankAccount
 from app.models.budget import BudgetMonthCategory
 from app.models.category import Category
 from app.models.operation import Operation
+from app.models.user import User
 from app.services.budget_service import (
     budget_month_start, get_category_effective_budget, get_spent_for_category, target_budget_month,
 )
@@ -56,11 +57,15 @@ def _bmc(bm, category):
 
 def category_remaining(bm, category):
     """What is still planned to be spent on this envelope this month (0 if closed or overspent)."""
+    from app.services import contribution_service as cs
     if category.role == 'common_transfer':
-        from app.services.contribution_service import due_for
-        due = due_for(bm.pot, bm.year, bm.month)
-        if due is not None:
-            return due
+        due = cs.due_for(bm.pot, bm.year, bm.month)
+        if due is not None:   # + charges paid for the common pot from this account, not yet debited
+            common = cs._common_of(bm.pot)
+            owner = db.session.get(User, bm.pot.owner_id)
+            return due + cs.advance_pending(common, owner, bm.year, bm.month)
+    if category.paid_by_user_id is not None and cs.get_plan(bm.pot, bm.year, bm.month) is not None:
+        return 0.0   # paid from a member's personal account: never leaves the common accounts
     bmc = _bmc(bm, category)
     if bmc is not None and bmc.closed_at is not None:
         return 0.0

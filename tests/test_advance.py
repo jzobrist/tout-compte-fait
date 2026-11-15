@@ -199,3 +199,92 @@ def test_simulation_net_of_advance(db, household_clean):
     result = sim.simulate(h.common, h.user_a, TODAY)
     assert result.error is None
     assert result.shares == {h.user_a.id: 1100.0, h.user_b.id: 900.0}
+
+
+# --- Task 3: free money and solidarity cap -----------------------------------------------------
+
+from datetime import datetime  # noqa: E402
+
+from app.models import BankAccount, BudgetMonth, Operation  # noqa: E402
+from app.services.balance_service import category_remaining, free_money  # noqa: E402
+from app.services.budget_service import get_or_create_budget_month  # noqa: E402
+from app.services.pointage_service import classify  # noqa: E402
+
+
+def _perso_account(db, h, value=2000.0, name='Perso A'):
+    acc = BankAccount(pot_id=h.personal_a.id, name=name, bank_name='B', balance_booked=value,
+                      balance_value=value, balance_at=datetime(2026, 11, 15, 6, 0))
+    _db.session.add(acc)
+    _db.session.commit()
+    return acc
+
+
+def _debit(db, h, acc, amount, ref, day=date(2026, 11, 5)):
+    op = Operation(pot_id=acc.pot_id, bank_account_id=acc.id, user_id=h.user_a.id, amount=amount,
+                   date=day, bank_date=day, direction='debit', bank_reference=ref, bank_label=ref)
+    _db.session.add(op)
+    _db.session.commit()
+    return op
+
+
+def _transfer_cat(h):
+    return Category.query.filter_by(pot_id=h.personal_a.id, role='common_transfer').one()
+
+
+def test_common_free_money_never_reserves_paid_charge(db, household_clean):
+    h = household_clean
+    plan, pret = _ref(db, h)
+    assert category_remaining(get_or_create_budget_month(h.common.id, *M), pret) == 0.0
+    from app.services.budget_service import recalculate_budget_month
+    other = get_or_create_budget_month(h.common.id, 2027, 3)   # month without plan
+    recalculate_budget_month(other)
+    assert category_remaining(other, pret) == 800.0
+
+
+def test_personal_free_money_reserves_charge_until_debited(db, household_clean):
+    h = household_clean
+    tcat = _ccat(db, h.personal_a, 'Virement vers le commun', 'fixed_amount', amount=0.0)
+    tcat.role = 'common_transfer'
+    _db.session.commit()
+    plan, pret = _ref(db, h)
+    acc = _perso_account(db, h)
+    pbm = get_or_create_budget_month(h.personal_a.id, *M)
+    assert category_remaining(pbm, tcat) == 1100.0 + 800.0
+    classify(_debit(db, h, acc, 800.0, 'PRET'), h.user_a, 'category', category=pret)
+    assert category_remaining(pbm, tcat) == 1100.0
+
+
+def test_no_phantom_surplus_after_month(db, household_clean):
+    h = household_clean
+    plan, pret = _ref(db, h)
+    charges = Category.query.filter_by(pot_id=h.common.id, name='Charges').one()
+    joint = BankAccount.query.filter_by(pot_id=h.common.id).first()
+    for who, amount in ((h.user_a, 1100.0), (h.user_b, 900.0)):
+        op = Operation(pot_id=h.common.id, bank_account_id=joint.id, user_id=h.user_a.id,
+                       amount=amount, date=date(2026, 11, 16), bank_date=date(2026, 11, 16),
+                       direction='credit', bank_reference=f'VIR{who.id}', bank_label='VIR')
+        _db.session.add(op)
+        _db.session.commit()
+        classify(op, h.user_a, 'contribution', contributor=who)
+    classify(_debit(db, h, joint, 2000.0, 'CHARGES'), h.user_a, 'category', category=charges)
+    classify(_debit(db, h, _perso_account(db, h), 800.0, 'PRET'), h.user_a, 'category', category=pret)
+    joint.balance_value = joint.balance_booked = 0.0   # 0 + 2000 received - 2000 paid
+    _db.session.commit()
+    assert free_money(h.common, get_or_create_budget_month(h.common.id, *M)).value == 0.0
+
+
+def test_member_cap_deducts_pending_advance(db, household_clean):
+    h = household_clean
+    plan, pret = _ref(db, h)
+    acc = _perso_account(db, h, value=2000.0)
+    with_pending = cs.member_cap(h.user_a, 2026, 11, TODAY)
+    pret.paid_by_user_id = None
+    _db.session.commit()
+    without = cs.member_cap(h.user_a, 2026, 11, TODAY)
+    assert without - with_pending == 800.0
+    pret.paid_by_user_id = h.user_a.id
+    _db.session.commit()
+    classify(_debit(db, h, acc, 800.0, 'PRET'), h.user_a, 'category', category=pret)
+    acc.balance_value = acc.balance_booked = 1200.0
+    _db.session.commit()
+    assert cs.member_cap(h.user_a, 2026, 11, TODAY) == with_pending
