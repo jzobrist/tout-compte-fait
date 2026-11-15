@@ -1,7 +1,17 @@
-{% set fixed_auto = cat_data | selectattr('type', 'equalto', 'fixed_auto') | list %}
-{% set fixed_amount = cat_data | selectattr('type', 'equalto', 'fixed_amount') | list %}
-{% set dynamic = cat_data | selectattr('type', 'equalto', 'dynamic') | list %}
+{# idle = 0 € budget and 0 € spent (to the cent): folded at the end of the list #}
+{% set ns = namespace(active=[], idle=[]) %}
+{% for item in cat_data %}
+  {% if item.metrics.effective|round(2) == 0 and item.metrics.spent|round(2) == 0 %}
+    {% set ns.idle = ns.idle + [item] %}
+  {% else %}
+    {% set ns.active = ns.active + [item] %}
+  {% endif %}
+{% endfor %}
 
+{% macro sections(items) %}
+{% set fixed_auto = items | selectattr('type', 'equalto', 'fixed_auto') | list %}
+{% set fixed_amount = items | selectattr('type', 'equalto', 'fixed_amount') | list %}
+{% set dynamic = items | selectattr('type', 'equalto', 'dynamic') | list %}
 {% for section_title, section_icon, section_items in [
     ('Charges fixes', '🔒', fixed_auto),
     ('Enveloppes fixes', '📌', fixed_amount),
@@ -14,3 +24,14 @@
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% endmacro %}
+
+{{ sections(ns.active) }}
+
+{% if ns.idle %}
+{% set n = ns.idle|length %}
+<details class="mt-2 categories-idle" id="categories-idle">
+  <summary class="small text-secondary">{{ n }} catégorie{{ 's' if n > 1 }} à 0 € (rien de prévu ni dépensé)</summary>
+  {{ sections(ns.idle) }}
+</details>
+{% endif %}
