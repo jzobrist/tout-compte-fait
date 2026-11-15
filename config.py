@@ -32,6 +32,7 @@ class DevelopmentConfig(Config):
 
 class TestingConfig(Config):
     TESTING = True
+    BCRYPT_LOG_ROUNDS = 4   # tests only: bcrypt at 12 rounds made every fixture ~0.5 s slower
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     WTF_CSRF_ENABLED = False
     BANK_SECRETS_KEY = '72bAoVYA7-JvULR4t9sgvLNNUQjSP_yTdCQ9HtHnnD8='  # fixed test-only Fernet key
