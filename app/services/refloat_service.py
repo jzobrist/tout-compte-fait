@@ -1,4 +1,4 @@
-"""Remise à flot (J4): frozen monthly deficit, member transfer supplements, envelope cuts.
+"""Remise à flot: frozen monthly deficit, envelope cuts (common pot: R also funded by J6 shares).
 
 A plan exists per pot and budget month once the deficit has been measured. The deficit is
 re-measured every month, so whatever was not absorbed shows up again in the next measurement.
@@ -16,22 +16,12 @@ from app.models.user import User
 from app.services.budget_service import (
     budget_month_start, dynamic_brut, get_category_effective_budget, get_or_create_budget_month,
     get_spent_for_category, pot_disponible, recalculate_budget_month, spent_for_category,
-    target_budget_month,
 )
 
 MONTHS_MIN, MONTHS_MAX = 1, 6
 SPLIT_DEFAULT = 0.5
 SPLIT_STEP = 0.05
-EPS = 1e-9
 
-
-@dataclass
-class MemberTransfer:
-    user: User
-    requested: float
-    capped: bool
-    received: float
-    due: float
 
 logger = logging.getLogger(__name__)
 
@@ -98,94 +88,11 @@ def monthly_share(plan):
     return plan.deficit / plan.months if plan.months else plan.deficit
 
 
-def matching_personal_month(common_pot, personal_pot, year, month):
-    """Personal budget month containing the start of the common budget month."""
-    start = budget_month_start(common_pot, year, month)
-    p_year, p_month = target_budget_month(start, personal_pot.income_start_day or 1)
-    return get_or_create_budget_month(personal_pot.id, p_year, p_month)
-
-
-def _matching_common_month(personal_pot, year, month):
-    """(year, month) of the common budget month whose matching personal month is (year, month)."""
-    common = _common_pot(personal_pot.household_id)
-    if common is None:
-        return None, None
-    start = budget_month_start(personal_pot, year, month)
-    first = target_budget_month(start, common.income_start_day or 1)
-    for cand in (_prev(*first), first, _next(*first)):
-        c_start = budget_month_start(common, *cand)
-        if target_budget_month(c_start, personal_pot.income_start_day or 1) == (year, month):
-            return common, cand
-    return common, None
-
-
-def member_cap(personal_bm):
-    """Most a member can add to the common pot: income − fixed charges − dynamic floors."""
-    cats = Category.query.filter_by(pot_id=personal_bm.pot_id).all()
-    fixed = sum(c.amount or 0.0 for c in cats if c.type in ('fixed_auto', 'fixed_amount'))
-    floors = sum(c.min_amount or 0.0 for c in cats if c.type == 'dynamic')
-    return max(0.0, personal_bm.total_income - fixed - floors)
-
-
-def _transfers(common_plan):
-    """(list of MemberTransfer, part of V not covered because of caps)."""
-    from app.services.contribution_service import is_j6
-    from app.services.pointage_service import contribution_received
-    common = common_plan.pot
-    if is_j6(common, common_plan.year, common_plan.month):
-        return [], 0.0
-    members = User.query.filter_by(household_id=common.household_id).order_by(User.id).all()
-    v = monthly_share(common_plan) * common_plan.split
-    personal_bms = {}
-    for u in members:
-        personal = Pot.query.filter_by(owner_id=u.id, kind='personal').first()
-        if personal is not None:
-            personal_bms[u.id] = matching_personal_month(common, personal, common_plan.year,
-                                                         common_plan.month)
-    total_income = sum(bm.total_income for bm in personal_bms.values())
-    result, uncovered = [], 0.0
-    for u in members:
-        pbm = personal_bms.get(u.id)
-        if v <= 0 or not members:
-            wanted = 0.0
-        elif total_income > 0:
-            wanted = v * (pbm.total_income if pbm else 0.0) / total_income
-        else:
-            wanted = v / len(members)
-        cap = member_cap(pbm) if pbm is not None else 0.0
-        requested = min(wanted, cap)
-        uncovered += wanted - requested
-        received = contribution_received(common, u, common_plan.year, common_plan.month)
-        result.append(MemberTransfer(u, requested, wanted > cap + EPS, received,
-                                     max(0.0, requested - received)))
-    return result, uncovered
-
-
-def member_transfers(common_plan):
-    return _transfers(common_plan)[0]
-
-
-def member_transfer_for(personal_pot, year, month):
-    """The owner's MemberTransfer from the common plan matching this personal month, or None."""
-    common, cand = _matching_common_month(personal_pot, year, month)
-    if cand is None:
-        return None
-    plan = get_plan(common, *cand)
-    if plan is None:
-        return None
-    return next((t for t in member_transfers(plan) if t.user.id == personal_pot.owner_id), None)
-
-
-def supplement_requested_for(personal_pot, year, month):
-    transfer = member_transfer_for(personal_pot, year, month)
-    return transfer.requested if transfer is not None else 0.0
-
-
 def envelope_part(plan):
     share = monthly_share(plan)
     if plan.pot.kind != 'common':
         return share
-    return share * (1.0 - plan.split) + _transfers(plan)[1]
+    return share * (1.0 - plan.split)
 
 
 def category_offsets(bm, cat, bmc):
@@ -226,16 +133,10 @@ def envelope_cuts(plan, bm):
 def _recalculate_plan(plan):
     pot = plan.pot or db.session.get(Pot, plan.pot_id)
     if pot.kind == 'common':
-        from app.services.contribution_service import is_j6, recalculate_household
-        if is_j6(pot, plan.year, plan.month):
-            recalculate_household(pot, plan.year, plan.month)
-            return
+        from app.services.contribution_service import recalculate_household
+        recalculate_household(pot, plan.year, plan.month)
+        return
     recalculate_budget_month(get_or_create_budget_month(pot.id, plan.year, plan.month))
-    if pot.kind == 'common':
-        for u in User.query.filter_by(household_id=pot.household_id).all():
-            personal = Pot.query.filter_by(owner_id=u.id, kind='personal').first()
-            if personal is not None:
-                recalculate_budget_month(matching_personal_month(pot, personal, plan.year, plan.month))
 
 
 def set_settings(plan, months, split):
@@ -364,8 +265,6 @@ def build_view(pot, today, year=None, month=None, user=None):
         row['dormant'] = (abs(planned) < 0.005 and abs(row['spent']) < 0.005
                           and abs(spent_for_category(cat, prev_y, prev_m)) < 0.005)
         envelopes.append(row)
-    transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
-    my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)
     my_contribution = _my_contribution(pot, bm.year, bm.month) if pot.kind == 'personal' else None
     contribution = (_contribution_view(pot, today, bm, j6_plan, requested, user)
                     if pot.kind == 'common' else None)
@@ -381,6 +280,5 @@ def build_view(pot, today, year=None, month=None, user=None):
                 j6=pot.kind == 'common' and cs.is_j6(pot, bm.year, bm.month),
                 report=ceilings, ceilings=ceilings, frozen=ceilings.frozen, personal=personal,
                 envelopes=envelopes, dormant_count=sum(r['dormant'] for r in envelopes),
-                transfers=transfers, my_transfer=my_transfer,
                 my_contribution=my_contribution, contribution=contribution,
                 year=bm.year, month=bm.month)

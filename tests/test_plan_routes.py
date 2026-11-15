@@ -135,24 +135,6 @@ def test_personal_plan_of_partner_404(db, household_clean):
     assert resp.status_code == 404
 
 
-def test_common_plan_hides_partner_personal_figures(db, household_clean):
-    h = household_clean
-    _deficit_setup(db, h, h.common)
-    # month already measured by J4 (before J6): its supplement logic stays untouched
-    from app.services import refloat_service
-    refloat_service.ensure_plan(h.common, current_budget_month(h.common, date.today()), date.today())
-    _income(h.personal_a, 4321.0)
-    _cat(db, h.personal_a, 'Loyer A', type_='fixed_amount', amount=4300.0)  # cap A = 21
-    _income(h.personal_b, 1000.0)
-    h.client_b.get('/plan')
-    h.client_b.post(f'/plan/{h.common.id}/settings', data={'months': '1', 'split': '100'})
-    html = h.client_b.get('/plan').get_data(as_text=True)
-    assert 'plafond atteint pour A' in html
-    assert '4 321' not in html and '4 300' not in html
-    assert '21,00' not in html  # A's capped supplement equals A's cap: hidden from B
-    assert '21,00' in h.client_a.get('/plan').get_data(as_text=True)  # A sees it
-
-
 def test_dashboard_shows_balance_card(db, household_clean):
     h = household_clean
     _account(db, h.common, 987.0)

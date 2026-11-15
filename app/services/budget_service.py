@@ -65,7 +65,7 @@ def fixed_brut(category, budget_month):
 
 
 def pot_disponible(budget_month, categories=None):
-    """Income left for dynamic categories: income − fixed amounts − refloat supplement (personal pot)."""
+    """Income left for dynamic categories: income − fixed amounts (common pot: J6 common disponible)."""
     pot = budget_month.pot or db.session.get(Pot, budget_month.pot_id)
     if pot.kind == 'common':
         from app.services.contribution_service import common_disponible, is_j6
@@ -75,18 +75,14 @@ def pot_disponible(budget_month, categories=None):
         categories = Category.query.filter_by(pot_id=budget_month.pot_id).all()
     fixed_total = sum(fixed_brut(c, budget_month) for c in categories
                       if c.type in ('fixed_auto', 'fixed_amount'))
-    disponible = budget_month.total_income - fixed_total
-    if pot.kind == 'personal':
-        from app.services.refloat_service import supplement_requested_for
-        disponible -= supplement_requested_for(pot, budget_month.year, budget_month.month)
-    return max(0.0, disponible)
+    return max(0.0, budget_month.total_income - fixed_total)
 
 
 def recalculate_budget_month(budget_month):
     """Recalculate all category allocations for a BudgetMonth.
 
     Formula:
-      disponible = total_income - sum(fixed amounts) - refloat supplement (personal pot)
+      disponible = total_income - sum(fixed amounts) (common pot: J6 common disponible)
       dynamic.base_allocated = ceiling (preset or stored slider, see ceiling_service) + carry_in
       fixed categories: base_allocated = amount + carry_in
     """

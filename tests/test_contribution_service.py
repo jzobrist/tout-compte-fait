@@ -296,21 +296,6 @@ def test_recalculate_idempotent_j6(db, household_clean):
     assert snap() == first
 
 
-def test_j4_month_unchanged(db, household_clean):
-    h = household_clean
-    _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=600.0)
-    _salary(db, h.personal_a, 3000.0)
-    _salary(db, h.personal_b, 2000.0)
-    _salary(db, h.common, 1000.0)
-    bm = get_or_create_budget_month(h.common.id, *M)
-    recalculate_budget_month(bm)
-    _account(db, h.common, 100.0)
-    plan = rs.ensure_plan(h.common, bm, TODAY)
-    assert plan.deficit == pytest.approx(500.0)
-    assert ContributionPlan.query.count() == 0
-    assert sum(t.requested for t in rs.member_transfers(plan)) == pytest.approx(250.0)
-
-
 def test_force_needs_at_least_one_salary(db, household_clean):
     h = household_clean
     _account(db, h.common, 0.0)
