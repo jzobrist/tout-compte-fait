@@ -15,7 +15,8 @@ from app.models.refloat import RefloatPlan
 from app.models.user import User
 from app.services.budget_service import (
     budget_month_start, dynamic_brut, get_category_effective_budget, get_or_create_budget_month,
-    get_spent_for_category, pot_disponible, recalculate_budget_month, target_budget_month,
+    get_spent_for_category, pot_disponible, recalculate_budget_month, spent_for_category,
+    target_budget_month,
 )
 
 MONTHS_MIN, MONTHS_MAX = 1, 6
@@ -340,6 +341,7 @@ def build_view(pot, today, year=None, month=None, user=None):
     order = {'dynamic': 0, 'fixed_amount': 1, 'fixed_auto': 1}
     cats = sorted(Category.query.filter_by(pot_id=pot.id).all(),
                   key=lambda c: (order.get(c.type, 2), c.name.lower()))
+    prev_y, prev_m = (bm.year - 1, 12) if bm.month == 1 else (bm.year, bm.month - 1)
     envelopes = []
     for cat in cats:
         bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
@@ -357,6 +359,10 @@ def build_view(pot, today, year=None, month=None, user=None):
                 lo = hi = round(env.amount)
             row['slider'] = dict(min=lo, max=hi, disabled=env.locked,
                                  value=min(hi, max(lo, round(env.amount))))
+        planned = row['slider']['value'] if 'slider' in row else row['effective']
+        # dormant: nothing planned, nothing spent this month nor the previous one -> folded away
+        row['dormant'] = (abs(planned) < 0.005 and abs(row['spent']) < 0.005
+                          and abs(spent_for_category(cat, prev_y, prev_m)) < 0.005)
         envelopes.append(row)
     transfers = member_transfers(plan) if has_deficit and pot.kind == 'common' else []
     my_transfer = (member_transfer_for(pot, bm.year, bm.month) if pot.kind == 'personal' else None)
@@ -374,6 +380,7 @@ def build_view(pot, today, year=None, month=None, user=None):
                 envelope_part=envelope_part(plan) if has_deficit else 0.0,
                 j6=pot.kind == 'common' and cs.is_j6(pot, bm.year, bm.month),
                 report=ceilings, ceilings=ceilings, frozen=ceilings.frozen, personal=personal,
-                envelopes=envelopes, transfers=transfers, my_transfer=my_transfer,
+                envelopes=envelopes, dormant_count=sum(r['dormant'] for r in envelopes),
+                transfers=transfers, my_transfer=my_transfer,
                 my_contribution=my_contribution, contribution=contribution,
                 year=bm.year, month=bm.month)
