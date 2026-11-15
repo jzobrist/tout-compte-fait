@@ -525,7 +525,8 @@ def adjusted(plan):
 def expected_contributions(pot, year, month):
     """Σ contributions of a J6 common month (they are the pot's income there), else 0."""
     plan = get_plan(pot, year, month) if pot.kind == 'common' else None
-    return float(sum(transfers(plan).values())) if plan is not None else 0.0
+    # shares, not transfers: charges paid directly from a personal account fund their category too
+    return float(sum(shares(plan).values())) if plan is not None else 0.0
 
 
 def shortfall(plan):

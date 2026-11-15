@@ -147,12 +147,13 @@ def check_name_free(user, name, pots, exclude=None):
 def _paid_by(cat, pot, settings):
     """Validated payer id (or None) for a common fixed charge paid from a personal account."""
     from app.models import User
+    if cat.type not in ('fixed_auto', 'fixed_amount'):
+        return None   # a dynamic envelope has no payer (the hidden form field is ignored)
     wanted = settings.get('paid_by', cat.paid_by_user_id) or None
     if wanted is None:
         return None
     member = db.session.get(User, int(wanted))
-    if (not pot.is_common or cat.type not in ('fixed_auto', 'fixed_amount')
-            or cat.role == 'common_transfer' or member is None
+    if (not pot.is_common or cat.role == 'common_transfer' or member is None
             or member.household_id != pot.household_id):
         raise CategoryError('Payeur invalide.')
     return member.id

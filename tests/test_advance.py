@@ -54,9 +54,9 @@ def test_paid_by_stored_and_cleared(db, household_clean, today):
 def test_paid_by_refused_outside_rules(db, household_clean, today):
     h = household_clean
     dyn = _ccat(db, h.common, 'Courses', 'dynamic', pct=0.2)
-    with pytest.raises(CategoryError):
-        category_service.update_family(h.user_a, dyn, dyn.name, 'dynamic', True, None,
-                                       {'common': {'percentage': 0.2, 'paid_by': h.user_a.id}})
+    category_service.update_family(h.user_a, dyn, dyn.name, 'dynamic', True, None,
+                                   {'common': {'percentage': 0.2, 'paid_by': h.user_a.id}})
+    assert dyn.paid_by_user_id is None   # ignored on a dynamic envelope
     perso = _ccat(db, h.personal_a, 'Loyer A', 'fixed_amount', amount=500.0)
     with pytest.raises(CategoryError):
         category_service.update_family(h.user_a, perso, perso.name, 'fixed_amount', False, 'own',
@@ -342,3 +342,24 @@ def test_plan_shows_paid_by_and_net_transfer(db, household_clean, frozen_today):
     assert 'chargespayéesdirectement800,00€' in flat
     assert f'{h.user_a.display_name}:<strong>1300€</strong>' in flat     # shares 2100/1100
     assert f'{h.user_b.display_name}:<strong>1100€</strong>' in flat
+
+
+# --- final review fixes ------------------------------------------------------------------------
+
+def test_form_switch_to_dynamic_with_payer_set(db, household_clean):
+    h = household_clean
+    pret = _pret(db, h)
+    pret.paid_by_user_id = h.user_a.id
+    _db.session.commit()
+    resp = h.client_a.post(f'/categories/{pret.id}/edit', data={
+        'name': 'Prêt', 'type': 'dynamic', 'common': 'y', 'personal': '',
+        'common-percentage': '0.1', 'common-paid_by': str(h.user_a.id)})
+    assert resp.status_code == 302
+    _db.session.refresh(pret)
+    assert pret.type == 'dynamic' and pret.paid_by_user_id is None
+
+
+def test_expected_contributions_cover_the_whole_need(db, household_clean):
+    h = household_clean
+    plan, _ = _ref(db, h)
+    assert cs.expected_contributions(h.common, *M) == 2800.0   # 1100 + 900 transfers + 800 paid directly
