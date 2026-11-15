@@ -171,8 +171,13 @@ def suggest(op):
     excluded = ['contribution']  # needs a contributor: never one-click
     if op.direction == 'credit' and op.pot is not None and op.pot.kind == 'common':
         excluded.append('income')  # credits on the common pot are contributions
+    # same pot, or same bank account: a personal-account debit classified on a common category
+    # has moved to the common pot but must still guide the next debit of that account
+    same_place = Operation.pot_id == op.pot_id
+    if op.bank_account_id is not None:
+        same_place = db.or_(same_place, Operation.bank_account_id == op.bank_account_id)
     candidates = Operation.query.filter(
-        Operation.pot_id == op.pot_id,
+        same_place,
         Operation.id != op.id,
         Operation.direction == op.direction,
         Operation.classification.isnot(None),

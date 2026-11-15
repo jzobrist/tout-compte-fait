@@ -335,3 +335,23 @@ def test_suggest_never_income_on_common_before_first_plan(db, household_ab):
               bank_reference='NEW')
     s = suggest(new)
     assert s is None or s.classification != 'income'
+
+
+def test_suggest_finds_personal_debit_classified_on_common_category(db, household_ab):
+    h = household_ab
+    cat = _cat(db, h.common, 'Transports')
+    acc = _account(db, h.personal_a)
+    old = _op(db, h, h.personal_a, account=acc, label='CB KEOLIS 271026', bank_date=date(2026, 10, 27))
+    classify(old, h.user_a, 'category', cat)
+    assert old.pot_id == h.common.id
+    cur = _op(db, h, h.personal_a, account=acc, label='CB KEOLIS 281026', bank_date=date(2026, 10, 28))
+    assert suggest(cur) == Suggestion('category', cat.id)
+
+
+def test_suggest_ignores_partner_personal_debit_on_common_category(db, household_ab):
+    h = household_ab
+    cat = _cat(db, h.common, 'Transports')
+    other = _op(db, h, h.personal_b, account=_account(db, h.personal_b), label='CB KEOLIS 1')
+    classify(other, h.user_b, 'category', cat)
+    cur = _op(db, h, h.personal_a, account=_account(db, h.personal_a), label='CB KEOLIS 2')
+    assert suggest(cur) is None
