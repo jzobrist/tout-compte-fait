@@ -60,6 +60,18 @@
       setBoth(box, el.dataset.value);
     }
   });
-  document.addEventListener('htmx:load', function (e) { init(e.target); });
+  // folded « dormant » envelopes: keep the fold open across htmx re-renders of the list
+  var openFolds = {};
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (d.classList && d.classList.contains('envelopes-dormant')) openFolds[d.id] = d.open;
+  }, true);
+  function restoreFolds() {
+    document.querySelectorAll('details.envelopes-dormant').forEach(function (d) {
+      if (openFolds[d.id] && !d.open) d.open = true;
+    });
+  }
+  document.addEventListener('htmx:load', function (e) { init(e.target); restoreFolds(); });
+  document.addEventListener('htmx:afterSettle', restoreFolds);
   document.addEventListener('DOMContentLoaded', function () { init(); });
 })();

@@ -1,38 +1,15 @@
 <div id="envelopes-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {% for row in envelopes %}
-  {% set cat = row.category %}
-  <div class="border-bottom py-2 {% if row.closed %}opacity-50{% endif %}">
-    <div class="d-flex justify-content-between align-items-center gap-2">
-      <div>
-        <strong>{{ cat.name }}</strong>
-        <span class="badge bg-light text-dark">{{ 'dyn.' if row.dynamic else 'fixe' }}</span>
-        {% if row.floor %}<span class="small text-secondary">plancher {{ row.floor|money }} €</span>{% endif %}
-        {% if row.closed %}<span class="badge bg-secondary">close</span>{% endif %}
-        <div>{% with oob=false %}{% include 'plan/_env_fig.html' %}{% endwith %}</div>
-      </div>
-      <button class="btn btn-sm btn-outline-secondary"
-              hx-post="{{ url_for('plan.' ~ ('reopen' if row.closed else 'close'), pot_id=pot.id, category_id=cat.id) }}"
-              hx-target="#envelopes-{{ pot.id }}" hx-swap="outerHTML">{{ 'Rouvrir' if row.closed else 'Clore' }}</button>
-    </div>
-    {% if row.slider %}
-    {% set url = url_for('plan.ceiling', pot_id=pot.id, category_id=cat.id) %}
-    <div class="ceiling-row" id="ceil-{{ cat.id }}">
-      <input type="range" class="form-range ceiling-range" name="amount" step="1"
-             min="{{ row.slider.min }}" max="{{ row.slider.max }}" value="{{ row.slider.value }}"
-             {% if row.slider.disabled %}disabled{% endif %}
-             aria-label="Plafond {{ cat.name }}"
-             hx-post="{{ url }}" hx-trigger="change" hx-swap="none">
-      <input type="number" class="form-control form-control-sm ceiling-field" name="amount" step="1" inputmode="numeric"
-             min="{{ row.slider.min }}" max="{{ row.slider.max }}" value="{{ row.slider.value }}"
-             {% if row.slider.disabled %}disabled{% endif %}
-             aria-label="Plafond {{ cat.name }} en euros"
-             hx-post="{{ url }}" hx-trigger="change" hx-swap="none">
-      <span class="small text-secondary">€</span>
-      <span hidden id="ceil-retained-{{ cat.id }}" data-retained-for="{{ cat.id }}"></span>
-    </div>
-    {% endif %}
-  </div>
+  {% for row in envelopes if not row.dormant %}
+  {% include 'plan/_envelope_row.html' %}
   {% else %}
-  <p class="text-secondary small">Aucune enveloppe.</p>
+  {% if not dormant_count %}<p class="text-secondary small">Aucune enveloppe.</p>{% endif %}
   {% endfor %}
+  {% if dormant_count %}
+  <details class="mt-2 envelopes-dormant" id="envelopes-dormant-{{ pot.id }}">
+    <summary class="small text-secondary">{{ dormant_count }} enveloppe{{ 's' if dormant_count > 1 }} sans dépense le mois dernier ni montant prévu</summary>
+    {% for row in envelopes if row.dormant %}
+    {% include 'plan/_envelope_row.html' %}
+    {% endfor %}
+  </details>
+  {% endif %}
 </div>
