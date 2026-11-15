@@ -29,6 +29,15 @@
     <div class="col-md-5 d-flex align-items-end">
       <div class="form-check">{{ sform.provision(class="form-check-input") }}{{ sform.provision.label(class="form-check-label") }}</div>
     </div>
+    <div class="col-12">
+      <details class="mt-2 f-fixed"{% if sform.paid_by.data %} open{% endif %}>
+        <summary class="small">Paramètres avancés</summary>
+        <div class="row g-2 mt-1">
+          <div class="col-md-5">{{ sform.paid_by.label(class="form-label") }}{{ sform.paid_by(class="form-select") }}</div>
+          <div class="col-md-7 d-flex align-items-end small text-secondary">Le montant est déduit de son virement au commun.</div>
+        </div>
+      </details>
+    </div>
     {% endif %}
   </div>
   {% endfor %}

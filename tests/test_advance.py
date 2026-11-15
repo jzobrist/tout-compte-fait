@@ -288,3 +288,57 @@ def test_member_cap_deducts_pending_advance(db, household_clean):
     acc.balance_value = acc.balance_booked = 1200.0
     _db.session.commit()
     assert cs.member_cap(h.user_a, 2026, 11, TODAY) == with_pending
+
+
+# --- Task 4: form and display ------------------------------------------------------------------
+
+def _flat(html):
+    return html.replace(' ', '').replace('\xa0', '').replace(' ', '')
+
+
+def test_category_form_paid_by_roundtrip(db, household_clean):
+    h = household_clean
+    pret = _pret(db, h)
+    resp = h.client_a.post(f'/categories/{pret.id}/edit', data={
+        'name': 'Prêt', 'type': 'fixed_auto', 'common': 'y', 'personal': '',
+        'common-amount': '800', 'common-paid_by': str(h.user_b.id)})
+    assert resp.status_code == 302, resp.get_data(as_text=True)[:500]
+    _db.session.refresh(pret)
+    assert pret.paid_by_user_id == h.user_b.id
+    html = h.client_a.get(f'/categories/{pret.id}/edit').get_data(as_text=True)
+    assert 'Paramètres avancés' in html and '<details class="mt-2 f-fixed" open>' in html
+
+
+def test_category_form_advanced_closed_by_default(db, household_clean):
+    h = household_clean
+    pret = _pret(db, h)
+    html = h.client_a.get(f'/categories/{pret.id}/edit').get_data(as_text=True)
+    assert '<details class="mt-2 f-fixed">' in html
+
+
+def _plan_with_loan(db, h):
+    """Like test_plan_routes._j6_setup (Loyer 2400, salaries 3000/2000) + Prêt 800 paid by A.
+    Uses this module's `date` (pinned by frozen_today)."""
+    from tests.test_plan_routes import _account as _acc, _cat
+    _acc(db, h.common, 0.0, 'Commun')
+    _cat(db, h.common, 'Loyer', type_='fixed_amount', amount=2400.0)
+    y, m = cs.target_month(h.common, date.today())
+    for pot, salary in ((h.personal_a, 3000.0), (h.personal_b, 2000.0)):
+        get_or_create_budget_month(pot.id, y, m).total_income = salary
+    _db.session.commit()
+    pret = _pret(db, h)
+    pret.paid_by_user_id = h.user_a.id
+    _db.session.commit()
+    h.client_a.get('/plan')            # prepares the plan
+    return y, m, pret
+
+
+def test_plan_shows_paid_by_and_net_transfer(db, household_clean, frozen_today):
+    h = household_clean
+    _plan_with_loan(db, h)
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert f'payé par {h.user_a.display_name}' in html
+    flat = _flat(html)
+    assert 'chargespayéesdirectement800,00€' in flat
+    assert f'{h.user_a.display_name}:<strong>1300€</strong>' in flat     # shares 2100/1100
+    assert f'{h.user_b.display_name}:<strong>1100€</strong>' in flat

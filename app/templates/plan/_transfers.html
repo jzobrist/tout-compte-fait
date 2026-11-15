@@ -1,5 +1,5 @@
 <div id="transfers-{{ pot.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if my_contribution %}
-  <div class="small mt-2">Virement vers le commun : {{ my_contribution.amount|money }} € ({{ my_contribution.status }}) — reste à faire {{ my_contribution.due|money }} €</div>
+  <div class="small mt-2">Virement vers le commun : {{ my_contribution.amount|money }} € ({{ my_contribution.status }}) — reste à faire {{ my_contribution.due|money }} €{% if my_contribution.advance %} (part {{ my_contribution.share|money }} € − charges payées directement {{ my_contribution.advance|money }} €){% endif %}</div>
   {% endif %}
 </div>

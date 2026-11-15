@@ -51,10 +51,13 @@ class CategorySettingsForm(FlaskForm):
     carry_over = BooleanField('Reporter le solde au mois suivant', default=True)
     constrained = BooleanField('Charge contrainte (compte dans le reste à vivre)', default=False)
     provision = BooleanField('Provision (peut recevoir le surplus du commun)', default=False)
+    paid_by = SelectField('Payé depuis le compte perso de', coerce=int, choices=[(0, '— personne —')],
+                          default=0, validators=[Optional()])
 
     def values(self):
         return {k: getattr(self, k).data for k in
-                ('amount', 'percentage', 'min_amount', 'max_amount', 'carry_over', 'constrained', 'provision')}
+                ('amount', 'percentage', 'min_amount', 'max_amount', 'carry_over', 'constrained', 'provision',
+                 'paid_by')}
 
 class AdjustmentForm(FlaskForm):
     from_category_id = SelectField('Depuis', coerce=int, validators=[DataRequired()])

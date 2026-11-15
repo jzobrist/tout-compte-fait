@@ -6,6 +6,7 @@
       <span class="badge bg-light text-dark">{{ 'dyn.' if row.dynamic else 'fixe' }}</span>
       {% if row.floor %}<span class="small text-secondary">plancher {{ row.floor|money }} €</span>{% endif %}
       {% if row.closed %}<span class="badge bg-secondary">close</span>{% endif %}
+      {% if cat.paid_by %}<span class="small text-secondary">payé par {{ cat.paid_by.display_name }}</span>{% endif %}
       <div>{% with oob=false %}{% include 'plan/_env_fig.html' %}{% endwith %}</div>
     </div>
     <button class="btn btn-sm btn-outline-secondary"

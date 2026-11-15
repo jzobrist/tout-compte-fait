@@ -4,7 +4,7 @@ from app.routes.forms import CategoryForm, CategorySettingsForm
 from app.services import category_service
 from app.services.category_service import CategoryError
 from app.services.access_service import load_pot_object_or_404
-from app.models import Category
+from app.models import Category, User
 
 categories_bp = Blueprint('categories', __name__, url_prefix='/categories')
 
@@ -23,7 +23,12 @@ def _settings_forms(exemplars=None):
         if by_kind is not None and kind not in by_kind:
             continue
         obj = by_kind[kind] if by_kind else None
-        blocks.append((kind, label, CategorySettingsForm(prefix=kind, obj=obj, meta={'csrf': False})))
+        sform = CategorySettingsForm(prefix=kind, obj=obj, meta={'csrf': False})
+        members = User.query.filter_by(household_id=current_user.household_id).order_by(User.id).all()
+        sform.paid_by.choices = [(0, '— personne —')] + [(u.id, u.display_name) for u in members]
+        if obj is not None and sform.paid_by.raw_data is None:   # GET: current payer
+            sform.paid_by.data = obj.paid_by_user_id or 0
+        blocks.append((kind, label, sform))
     return blocks
 
 
