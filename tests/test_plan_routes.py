@@ -397,6 +397,9 @@ def test_simulation_post_saves_and_returns_shares(db, household_clean, frozen_to
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert html.count('devrait virer') == 2 and 'A devrait virer' in html
+    import re
+    assert re.findall(r'devrait virer <strong>([^<]*)</strong>', html) and all(
+        re.fullmatch(r'\d{1,3}( \d{3})*', v) for v in re.findall(r'devrait virer <strong>([^<]*)</strong>', html))
     # only the result is swapped: the inputs (focus, caret) are not rebuilt
     assert '<input' not in html and 'id="simulation"' not in html
     assert sim.forecasts(h.user_a) == {h.user_a.id: 3000.0, h.user_b.id: 2000.0}
