@@ -15,6 +15,9 @@
   <div class="cat-section-title mt-3">{{ label }}</div>
   <div class="row g-2">
     <div class="col-md-3 f-fixed">{{ sform.amount.label(class="form-label") }}{{ sform.amount(class="form-control") }}</div>
+    <div class="col-md-3 f-fixed">{{ sform.active_from.label(class="form-label") }}{{ sform.active_from(class="form-control") }}</div>
+    <div class="col-md-3 f-fixed">{{ sform.active_until.label(class="form-label") }}{{ sform.active_until(class="form-control") }}</div>
+    <div class="col-md-3 f-fixed d-flex align-items-end small text-secondary">Mois budgétaire du premier / dernier prélèvement. Nouveau prêt : créez une nouvelle catégorie.</div>
     <div class="col-md-3 f-dyn">{{ sform.percentage.label(class="form-label") }}{{ sform.percentage(class="form-control") }}</div>
     <div class="col-md-3 f-dyn">{{ sform.min_amount.label(class="form-label") }}{{ sform.min_amount(class="form-control") }}</div>
     <div class="col-md-3 f-dyn">{{ sform.max_amount.label(class="form-label") }}{{ sform.max_amount(class="form-control") }}</div>

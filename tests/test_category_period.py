@@ -103,3 +103,56 @@ def test_simulation_follows_period(db, household_clean):
     _cat(db, h.personal_a, 'Fini perso', amount=300.0, constrained=True, active_until=OCT)
     after = sim.simulate(h.common, h.user_a, SIM_TODAY)
     assert before.error is None and after.shares == before.shares
+
+
+# --- Task 3 ------------------------------------------------------------------------------------
+import pytest  # noqa: E402
+
+from app.services import category_service  # noqa: E402
+from app.services.category_service import CategoryError  # noqa: E402
+
+
+def test_create_category_with_period_via_form(db, household_ab):
+    h = household_ab
+    resp = h.client_a.post('/categories', data={
+        'name': 'Vélo', 'type': 'fixed_auto', 'common': 'y', 'personal': '',
+        'common-amount': '150', 'common-active_from': '2026-12', 'common-active_until': '2027-03'})
+    assert resp.status_code == 302
+    c = Category.query.filter_by(name='Vélo').one()
+    assert (c.active_from, c.active_until) == (DEC, MAR)
+
+
+def test_period_order_rejected(db, household_clean):
+    h = household_clean
+    c = _cat(db, h.personal_a, 'Vélo')
+    with pytest.raises(CategoryError, match='Le premier mois doit précéder le dernier.'):
+        category_service.update_settings(h.user_a, c, {'active_from': MAR, 'active_until': DEC})
+
+
+def test_period_ignored_for_dynamic(db, household_clean):
+    h = household_clean
+    c = _cat(db, h.personal_a, 'Loisirs', amount=None, type_='dynamic')
+    category_service.update_settings(h.user_a, c, {'active_from': DEC, 'active_until': MAR})
+    assert (c.active_from, c.active_until) == (None, None)
+
+
+def test_change_type_to_dynamic_clears_period(db, household_clean):
+    h = household_clean
+    c = _cat(db, h.personal_a, 'Vélo', active_from=DEC, active_until=MAR)
+    category_service.change_type(h.user_a, c, 'dynamic')
+    assert (c.active_from, c.active_until) == (None, None)
+
+
+def test_period_locked_when_plan_validated(db, household_clean, monkeypatch):
+    h = household_clean
+    c = _cat(db, h.common, 'Prêt commun', amount=800.0, paid_by_user_id=h.user_a.id)
+    monkeypatch.setattr(cs, 'advance_locked', lambda pot, today: True)
+    with pytest.raises(CategoryError):
+        category_service.update_settings(h.user_a, c, {'active_until': MAR})
+
+
+def test_edit_page_shows_period(db, household_clean):
+    h = household_clean
+    c = _cat(db, h.common, 'Vélo', active_from=DEC, active_until=MAR)
+    html = h.client_a.get(f'/categories/{c.id}/edit').get_data(as_text=True)
+    assert 'value="2026-12"' in html and 'value="2027-03"' in html
