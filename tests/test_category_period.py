@@ -203,3 +203,19 @@ def test_period_label_not_on_common_plan_for_personal(db, household_clean):
     assert 'échéances restantes' not in html and 'à partir de' not in html
     html_b = h.client_b.get('/plan').get_data(as_text=True)
     assert 'échéances restantes' in html_b    # B sees it on their own personal section
+
+
+def test_bad_month_format_shows_message(db, household_ab):
+    """Browsers without <input type=month> send free text: refused with a visible hint."""
+    h = household_ab
+    resp = h.client_a.post('/categories', data={
+        'name': 'Vélo', 'type': 'fixed_auto', 'common': 'y', 'personal': '',
+        'common-amount': '150', 'common-active_until': '12/2026'})
+    assert resp.status_code == 400
+    assert 'Format attendu : AAAA-MM' in resp.get_data(as_text=True)
+    assert Category.query.filter_by(name='Vélo').count() == 0
+
+
+def test_month_fields_have_placeholder(db, household_ab):
+    html = household_ab.client_a.get('/categories').get_data(as_text=True)
+    assert 'placeholder="AAAA-MM"' in html
