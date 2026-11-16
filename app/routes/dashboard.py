@@ -168,6 +168,33 @@ def detail_response_or_none():
     return render_category_detail(load_pot_object_or_404(Category, cat_id), request.form)
 
 
+def _toggle_closed(cat_id, close):
+    from flask import abort
+    from app.services.balance_service import EnvelopeError, close_envelope, reopen_envelope
+    from app.services.budget_service import current_budget_month
+    cat = load_pot_object_or_404(Category, cat_id)
+    today = date.today()
+    bm = current_budget_month(cat.pot, today)
+    try:
+        (close_envelope if close else reopen_envelope)(bm, cat, today)
+    except EnvelopeError:
+        abort(400)
+    recalculate_budget_month(bm)
+    return render_gauges(bm, today)
+
+
+@dashboard_bp.route('/category/<int:cat_id>/close', methods=['POST'])
+@login_required
+def close_category(cat_id):
+    return _toggle_closed(cat_id, True)
+
+
+@dashboard_bp.route('/category/<int:cat_id>/reopen', methods=['POST'])
+@login_required
+def reopen_category(cat_id):
+    return _toggle_closed(cat_id, False)
+
+
 @dashboard_bp.route('/category/<int:cat_id>/detail')
 @login_required
 def category_detail_view(cat_id):

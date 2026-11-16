@@ -12,6 +12,20 @@
        data-bs-toggle="modal" data-bs-target="#detailModal">{% if state == 'done' %}✓ {% endif %}{{ item.category.name }}</a>
     <div class="d-flex align-items-center gap-2">
       <span class="cat-amount {{ state }}">{{ spent|money }}€ / {{ effective|money }}€</span>
+      {% if editable %}
+      {% if item.closed %}
+      <button class="btn-adjust"
+              hx-post="{{ url_for('dashboard.reopen_category', cat_id=item.category.id) }}"
+              hx-target="#category-list" hx-swap="innerHTML"
+              title="Rouvrir">↺</button>
+      {% else %}
+      <button class="btn-adjust"
+              hx-post="{{ url_for('dashboard.close_category', cat_id=item.category.id) }}"
+              hx-target="#category-list" hx-swap="innerHTML"
+              hx-confirm="Clore libère le reste : seulement si tous les prélèvements sont passés."
+              title="Clore">✓</button>
+      {% endif %}
+      {% endif %}
       <button class="btn-adjust"
               hx-get="{{ url_for('adjustments.form') }}"
               hx-target="#adjustment-modal-body"
