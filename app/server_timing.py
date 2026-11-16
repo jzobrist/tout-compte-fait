@@ -20,8 +20,9 @@ def _after_cursor(conn, cursor, statement, parameters, context, executemany):
 
 
 def install(app):
-    event.listen(Engine, 'before_cursor_execute', _before_cursor)
-    event.listen(Engine, 'after_cursor_execute', _after_cursor)
+    if not event.contains(Engine, 'before_cursor_execute', _before_cursor):   # once per process,
+        event.listen(Engine, 'before_cursor_execute', _before_cursor)        # not per create_app
+        event.listen(Engine, 'after_cursor_execute', _after_cursor)
 
     @app.before_request
     def _start():

@@ -195,3 +195,28 @@ def test_member_base_follows_salary_change(app, db, setup):
         bm.total_income += 500           # personal_a's month, not flushed
         assert cs.member_base(h.user_a, bm.year, bm.month).salary == before + 500
 
+
+
+def test_memoized_objects_need_no_sql_once_released(app, db, setup, sql_count):
+    """The ORM objects behind memo_object/memo_objects stay alive for the request: no reload SQL
+    even when the caller dropped them (the identity map only holds weak references)."""
+    import gc
+    from app.models import ContributionPlan
+    from app.services import contribution_service as cs
+    h, pot, food, other, bm = setup
+    db.session.add(ContributionPlan(pot_id=h.common.id, year=2030, month=1))
+    db.session.commit()
+    common_id, hh = h.common.id, h.common.household_id
+    db.session.expunge_all()
+    with app.test_request_context():
+        from app.models import Pot
+        common = db.session.get(Pot, common_id)
+        cs.get_plan(common, 2030, 1)
+        cs._members(common)
+        gc.collect()
+        before = sql_count['n']
+        assert cs.get_plan(common, 2030, 1) is not None
+        assert len(cs._members(common)) == 2
+        gc.collect()
+        assert cs.get_plan(common, 2030, 1) is not None
+        assert sql_count['n'] == before

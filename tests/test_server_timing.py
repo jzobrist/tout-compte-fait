@@ -35,3 +35,20 @@ def test_count_is_per_request(db, household_clean):
 def test_no_header_when_anonymous(client, db):
     r = client.get('/login')
     assert 'Server-Timing' not in r.headers
+
+
+def test_count_not_doubled_by_a_second_app(db, household_clean):
+    import re
+    from sqlalchemy import event
+    from app import create_app
+    create_app('testing')                     # a second app in the same process (some tests do this)
+    real = {'n': 0}
+
+    def count(*_):
+        real['n'] += 1
+    event.listen(db.engine, 'before_cursor_execute', count)
+    try:
+        header = household_clean.client_a.get('/operations/pointage').headers['Server-Timing']
+    finally:
+        event.remove(db.engine, 'before_cursor_execute', count)
+    assert int(re.search(r'\((\d+) req', header).group(1)) == real['n']
