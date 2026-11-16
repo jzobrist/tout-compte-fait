@@ -15,7 +15,8 @@ from app.models.pot import Pot
 from app.models.refloat import RefloatPlan
 from app.models.user import User
 from app.services.budget_service import (
-    current_budget_month, dynamic_brut, get_or_create_budget_month, recalculate_budget_month,
+    current_budget_month, dynamic_brut, fixed_amount_for, get_or_create_budget_month,
+    recalculate_budget_month,
     spent_for_category, target_budget_month,
 )
 
@@ -45,9 +46,9 @@ def _constrained_categories(personal_pot):
         Category.type.in_(('fixed_auto', 'fixed_amount'))).all()
 
 
-def constrained_total(personal_pot):
-    """Σ amount of the personal pot's constrained fixed categories."""
-    return sum(c.amount or 0.0 for c in _constrained_categories(personal_pot))
+def constrained_total(personal_pot, year, month):
+    """Σ amount for budget month (year, month) of the personal pot's constrained fixed categories."""
+    return sum(fixed_amount_for(c, year, month) for c in _constrained_categories(personal_pot))
 
 
 def member_base(user, year, month):
@@ -55,7 +56,7 @@ def member_base(user, year, month):
     pot = Pot.query.filter_by(owner_id=user.id, kind='personal').one()
     bm = BudgetMonth.query.filter_by(pot_id=pot.id, year=year, month=month).first()
     salary = float(bm.total_income or 0.0) if bm else 0.0
-    constrained = constrained_total(pot)
+    constrained = constrained_total(pot, year, month)
     return MemberBase(user=user, salary=salary, constrained=constrained, salary_known=salary > 0)
 
 
@@ -185,14 +186,14 @@ def member_cap(user, year, month, today, salary_in_balance=None, salary=None):
         projection += contribution_received(common, user, year, month)
 
     constrained_cats = _constrained_categories(pot)
-    constrained = sum(c.amount or 0.0 for c in constrained_cats)
+    constrained = sum(fixed_amount_for(c, year, month) for c in constrained_cats)
     current = target_budget_month(today, pot.income_start_day or 1)
     current_bm = bm if current == (year, month) else BudgetMonth.query.filter_by(
         pot_id=pot.id, year=current[0], month=current[1]).first()
     if current_bm is None:
-        remaining = constrained
+        remaining = sum(fixed_amount_for(c, *current) for c in constrained_cats)
     else:
-        remaining = sum(max(0.0, (c.amount or 0.0) - spent_for_category(c, *current))
+        remaining = sum(max(0.0, fixed_amount_for(c, *current) - spent_for_category(c, *current))
                         for c in constrained_cats)
     projection -= remaining
     if current < (year, month):   # M is still ahead: its charges come on top of the current month's
@@ -205,7 +206,7 @@ def member_cap(user, year, month, today, salary_in_balance=None, salary=None):
         # charges paid for the common pot from this account, still to be debited
         projection -= advance_pending(common, user, *current_common)
         if current_common < (year, month):
-            projection -= advance_for(common, user)
+            projection -= advance_for(common, user, year, month)
 
     overdraft = sum(a.overdraft_limit or 0.0 for a in
                     BankAccount.query.filter_by(pot_id=pot.id, archived=False))
@@ -435,8 +436,8 @@ def bases(plan):
     return out
 
 
-def _common_fixed(common):
-    return sum(c.amount or 0.0 for c in Category.query.filter(
+def _common_fixed(common, year, month):
+    return sum(fixed_amount_for(c, year, month) for c in Category.query.filter(
         Category.pot_id == common.id, Category.type.in_(('fixed_auto', 'fixed_amount'))))
 
 
@@ -444,7 +445,7 @@ def common_disponible(common_bm):
     pot = common_bm.pot or db.session.get(Pot, common_bm.pot_id)
     plan = get_plan(pot, common_bm.year, common_bm.month)
     total = sum(bases(plan).values()) if plan is not None else 0.0
-    return max(0.0, total - _common_fixed(pot))
+    return max(0.0, total - _common_fixed(pot, common_bm.year, common_bm.month))
 
 
 @dataclass
@@ -467,7 +468,7 @@ def need_for(common, year, month, bases, position, allocations, refloat_v, dynam
     the simulation). bases: {user_id: base}. dynamic=None: Σ dynamic brut (simulation);
     otherwise the envelopes' total (ceilings)."""
     bm = BudgetMonth.query.filter_by(pot_id=common.id, year=year, month=month).first()
-    fixed = _common_fixed(common)
+    fixed = _common_fixed(common, year, month)
     disponible = max(0.0, sum(bases.values()) - fixed)
     if dynamic is None:
         dynamic = sum(dynamic_brut(c, disponible) for c in
@@ -492,9 +493,9 @@ def caps(plan):
     return {c.user_id: c.cap for c in plan.caps}
 
 
-def advance_for(common, user):
+def advance_for(common, user, year, month):
     """Σ common fixed charges paid from `user`'s personal account (live settings)."""
-    return float(sum(c.amount or 0.0 for c in Category.query.filter(
+    return float(sum(fixed_amount_for(c, year, month) for c in Category.query.filter(
         Category.pot_id == common.id, Category.paid_by_user_id == user.id,
         Category.type.in_(('fixed_auto', 'fixed_amount')))))
 
@@ -503,7 +504,7 @@ def advances(plan):
     """{user_id: charges paid directly}: frozen in ContributionShare once validated, else live."""
     if plan.status == 'validated' and plan.shares:
         return {s.user_id: s.advance or 0.0 for s in plan.shares}
-    return {u.id: advance_for(plan.pot, u) for u in _members(plan.pot)}
+    return {u.id: advance_for(plan.pot, u, plan.year, plan.month) for u in _members(plan.pot)}
 
 
 def advance_pending(common, user, year, month):
@@ -524,7 +525,7 @@ def advance_pending(common, user, year, month):
             Operation.category_id == cat.id, Operation.direction == 'debit',
             Operation.classification == 'category', BankAccount.pot_id == pot.id,
             Operation.date >= start, Operation.date < end).scalar() or 0.0
-        total += max(0.0, (cat.amount or 0.0) - float(debited))
+        total += max(0.0, fixed_amount_for(cat, year, month) - float(debited))
     return round(total, 2)
 
 

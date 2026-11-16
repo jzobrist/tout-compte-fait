@@ -87,13 +87,13 @@ def simulate(common, user, today):
     bases = {}
     for u in members:
         pot = Pot.query.filter_by(owner_id=u.id, kind='personal').first()
-        bases[u.id] = typed.get(u.id, 0.0) - cs.constrained_total(pot)
+        bases[u.id] = typed.get(u.id, 0.0) - cs.constrained_total(pot, year, month)
 
     from app.services.refloat_service import get_plan as get_refloat, monthly_share
     rplan = get_refloat(common, year, month) or cs.new_refloat_plan(common, year, month, position)
     refloat_v = monthly_share(rplan) * rplan.split
     total_need = cs.need_for(common, year, month, bases, position, 0.0, refloat_v).total
-    advances = {u.id: cs.advance_for(common, u) for u in members}
+    advances = {u.id: cs.advance_for(common, u, year, month) for u in members}
     caps = cs.effective_caps(
         {u.id: cs.member_cap(u, year, month, today, salary=typed.get(u.id, 0.0)) for u in members},
         advances)
