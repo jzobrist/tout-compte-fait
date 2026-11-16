@@ -13,8 +13,9 @@ from app.services.budget_service import (
 def sql_count(db):
     counter = {'n': 0}
 
-    def count(*_):
+    def count(conn, cur, stmt, *_):
         counter['n'] += 1
+        counter.setdefault('stmts', []).append(stmt[:70])
     event.listen(db.engine, 'before_cursor_execute', count)
     yield counter
     event.remove(db.engine, 'before_cursor_execute', count)
@@ -220,3 +221,59 @@ def test_memoized_objects_need_no_sql_once_released(app, db, setup, sql_count):
         gc.collect()
         assert cs.get_plan(common, 2030, 1) is not None
         assert sql_count['n'] == before
+
+
+# --- grouped reads: month rows, pot spent ----------------------------------------------------
+
+def test_month_category_rows_read_once_per_month(app, db, setup, sql_count):
+    from app.services.budget_service import month_category_row
+    h, pot, food, other, bm = setup
+    with app.test_request_context():
+        month_category_row(bm, food)
+        other.id                                               # reload after the fixture's commit
+        before = sql_count['n']
+        a, b = month_category_row(bm, food), month_category_row(bm, other)
+        assert sql_count['n'] == before                       # other's row came with the first read
+        assert (a.category_id, b.category_id) == (food.id, other.id)
+
+
+def test_month_category_row_none_then_created(app, db, setup):
+    from app.models import Category
+    from app.services.budget_service import month_category_row, recalculate_budget_month
+    h, pot, food, other, bm = setup
+    extra = Category(name='Extra', type='dynamic', percentage=0.1, pot_id=pot.id, carry_over=False)
+    db.session.add(extra)
+    db.session.commit()
+    with app.test_request_context():
+        assert month_category_row(bm, extra) is None
+        recalculate_budget_month(bm)                           # creates the row (flush)
+        assert month_category_row(bm, extra) is not None
+
+
+def test_pot_spent_total_one_query_same_result(app, db, setup, sql_count):
+    from datetime import timedelta
+    from app.services.budget_service import pot_spent_total, budget_month_bounds
+    h, pot, food, other, bm = setup
+    start, end = budget_month_bounds(pot, bm.year, bm.month)
+    ops = [
+        Operation(pot_id=pot.id, user_id=h.user_a.id, category_id=food.id, amount=30.0, date=start,
+                  label='x', direction='debit', classification='category'),
+        Operation(pot_id=pot.id, user_id=h.user_a.id, category_id=other.id, amount=12.25, date=start,
+                  label='x', direction='debit', classification='category'),
+        Operation(pot_id=pot.id, user_id=h.user_a.id, category_id=food.id, amount=5.0, date=start,
+                  label='x', direction='credit', classification='refund'),
+        Operation(pot_id=pot.id, user_id=h.user_a.id, category_id=food.id, amount=99.0,
+                  date=end, label='x', direction='debit', classification='category'),          # next month
+        Operation(pot_id=pot.id, user_id=h.user_a.id, category_id=food.id, amount=77.0, date=start,
+                  label='x', direction='debit', classification='internal'),                    # not spent
+        Operation(pot_id=h.common.id, user_id=h.user_a.id, category_id=None, amount=50.0, date=start,
+                  label='x', direction='debit', classification=None),                          # to classify
+    ]
+    db.session.add_all(ops)
+    db.session.commit()
+    with app.test_request_context():
+        pot.income_start_day, bm.year                          # reload after the commit above
+        before = sql_count['n']
+        total = pot_spent_total(pot.id, bm.year, bm.month)
+        assert sql_count['n'] - before == 1, sql_count.get('stmts', [])[before:]
+    assert total == 37.25

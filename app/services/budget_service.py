@@ -168,10 +168,16 @@ def get_category_effective_budget(budget_month, category):
                 lambda: _effective_uncached(budget_month, category))
 
 
+def month_category_row(budget_month, category):
+    """The BudgetMonthCategory of `category` in `budget_month`, or None. All rows of the month are
+    read in one query and memoized per request."""
+    rows = memo(('bmcs', budget_month.id), lambda: {
+        r.category_id: r for r in BudgetMonthCategory.query.filter_by(budget_month_id=budget_month.id)})
+    return rows.get(category.id)
+
+
 def _effective_uncached(budget_month, category):
-    bmc = BudgetMonthCategory.query.filter_by(
-        budget_month_id=budget_month.id, category_id=category.id
-    ).first()
+    bmc = month_category_row(budget_month, category)
     if not bmc:
         return 0.0
     adjustments_in = db.session.query(
@@ -229,9 +235,25 @@ def spent_operations(category, year, month):
 
 
 def pot_spent_total(pot_id, year, month):
-    """Total spent over all categories of a pot (internal/off_budget/unclassified excluded)."""
-    cats = Category.query.filter_by(pot_id=pot_id).all()
-    return sum(spent_for_category(c, year, month) for c in cats)
+    """Total spent over all categories of a pot (internal/off_budget/unclassified excluded): the
+    sum of `spent_for_category` over the pot's categories, in one query. Memoized per request."""
+    return memo(('pot_spent', pot_id, year, month), lambda: _pot_spent_uncached(pot_id, year, month))
+
+
+def _pot_spent_uncached(pot_id, year, month):
+    pot = db.session.get(Pot, pot_id)
+    start, end = budget_month_bounds(pot, year, month)
+    signed = db.case((Operation.direction == 'credit', -Operation.amount), else_=Operation.amount)
+    result = db.session.query(db.func.sum(signed)).filter(
+        Operation.category_id.in_(db.select(Category.id).where(Category.pot_id == pot_id)),
+        db.or_(
+            db.and_(Operation.direction == 'debit', Operation.classification == 'category'),
+            db.and_(Operation.direction == 'credit', Operation.classification == 'refund'),
+        ),
+        Operation.date >= start,
+        Operation.date < end,
+    ).scalar()
+    return float(result or 0.0)
 
 
 def get_spent_for_category(budget_month, category):

@@ -16,7 +16,7 @@ from app.models.category import Category
 from app.models.ceiling import EnvelopeCeiling, EnvelopePlan
 from app.services import refloat_service
 from app.services.budget_service import (
-    dynamic_brut, get_or_create_budget_month, get_spent_for_category, pot_disponible,
+    dynamic_brut, get_or_create_budget_month, month_category_row, get_spent_for_category, pot_disponible,
     recalculate_budget_month,
 )
 from app.services.refloat_service import CutReport, envelope_cuts, monthly_share
@@ -91,7 +91,7 @@ def _report_uncached(bm):
     result = CeilingReport(frozen=frozen, unabsorbed=cuts.unabsorbed)
     for cat in cats:
         brut = dynamic_brut(cat, disponible)
-        bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
+        bmc = month_category_row(bm, cat)
         closed = bmc is not None and bmc.closed_at is not None
         carry_in, adjustments = refloat_service.category_offsets(bm, cat, bmc)
         low = max(cat.min_amount or 0.0, get_spent_for_category(bm, cat) - carry_in - adjustments, 0.0)

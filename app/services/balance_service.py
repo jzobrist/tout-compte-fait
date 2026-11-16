@@ -52,7 +52,8 @@ def pot_balance(pot):
 
 
 def _bmc(bm, category):
-    return BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=category.id).first()
+    from app.services.budget_service import month_category_row
+    return month_category_row(bm, category)
 
 
 def category_remaining(bm, category):

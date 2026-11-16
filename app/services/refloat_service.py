@@ -15,7 +15,7 @@ from app.models.pot import Pot
 from app.models.refloat import RefloatPlan
 from app.models.user import User
 from app.services.budget_service import (
-    budget_month_start, dynamic_brut, get_category_effective_budget, get_or_create_budget_month,
+    budget_month_start, dynamic_brut, get_category_effective_budget, get_or_create_budget_month, month_category_row,
     get_spent_for_category, pot_disponible, recalculate_budget_month, spent_for_category,
 )
 
@@ -112,7 +112,7 @@ def envelope_cuts(plan, bm):
     report = CutReport()
     for cat in cats:
         brut = dynamic_brut(cat, disponible)
-        bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
+        bmc = month_category_row(bm, cat)
         if bmc is not None and bmc.closed_at is not None:
             remaining = 0.0
         else:
@@ -243,7 +243,7 @@ def build_view(pot, today, year=None, month=None, user=None):
     prev_y, prev_m = (bm.year - 1, 12) if bm.month == 1 else (bm.year, bm.month - 1)
     envelopes = []
     for cat in cats:
-        bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
+        bmc = month_category_row(bm, cat)
         row = dict(category=cat, dynamic=cat.type == 'dynamic',
                    effective=get_category_effective_budget(bm, cat),
                    spent=get_spent_for_category(bm, cat),
