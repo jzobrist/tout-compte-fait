@@ -50,7 +50,9 @@ def add():
         db.session.add(op)
         db.session.commit()
         if request.headers.get('HX-Request'):
-            bm = get_or_create_budget_month(category.pot_id, op.date.year, op.date.month)
+            from app.services.budget_service import target_budget_month
+            bm = get_or_create_budget_month(
+                category.pot_id, *target_budget_month(op.date, category.pot.income_start_day or 1))
             recalculate_budget_month(bm)
             return render_gauges(bm, datetime.date.today())
         return redirect(url_for('dashboard.index'))

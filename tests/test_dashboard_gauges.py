@@ -71,6 +71,29 @@ def test_htmx_add_operation_renders_sorted_list(db, household_clean):
     assert html.index('Overish') < html.index('Halfish')
 
 
+def test_htmx_add_operation_uses_budget_month(db, household_clean):
+    """income_start_day reached: the refreshed list is the current budget month, buttons kept."""
+    import pytest
+    h = household_clean
+    pot = h.personal_a
+    today = date.today()
+    if today.day < 2:
+        pytest.skip('needs a start day > 1 already reached')
+    pot.income_start_day = min(today.day, 28)
+    db.session.commit()
+    over = _cat(db, h, pot, 'Overish')
+    bm = _fund(pot)
+    assert (bm.year, bm.month) != (today.year, today.month)
+    h.client_a.post(f'/pots/{pot.id}/select')
+
+    resp = h.client_a.post('/operations', headers={'HX-Request': 'true'}, data={
+        'amount': '150', 'date': today.isoformat(), 'label': 'x', 'category_id': over.id})
+
+    card = _card(resp.get_data(as_text=True), over)
+    assert 'cat-progress-bar danger' in card
+    assert f'/category/{over.id}/close' in card
+
+
 def _closed_at(bm, cat):
     bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).first()
     return bmc.closed_at if bmc else None
