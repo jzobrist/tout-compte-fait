@@ -317,6 +317,26 @@ def _month_used(common, year, month):
         Operation.date >= start, Operation.date < end).first() is not None
 
 
+def _unspent_freed(common, prev_bm, year, month):
+    """What the finished month M-1 left unspent and nothing claims any more.
+
+    Per envelope: its M-1 remaining minus the part carried into M (M's carry-in, frozen when M's
+    row was created; the carry-over flag when M has no row yet). A direct debit (fixed_auto) not
+    passed yet will still come: it stays reserved.
+    """
+    from app.models.budget import BudgetMonthCategory
+    from app.services.balance_service import category_remaining
+    bm = BudgetMonth.query.filter_by(pot_id=common.id, year=year, month=month).first()
+    freed = 0.0
+    for c in Category.query.filter(Category.pot_id == common.id, Category.type != 'fixed_auto'):
+        remaining = category_remaining(prev_bm, c)
+        bmc = (BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=c.id).first()
+               if bm is not None else None)
+        carried = bmc.carry_in if bmc is not None else (remaining if c.carry_over else 0.0)
+        freed += max(0.0, remaining - carried)
+    return freed
+
+
 def measure_position(common, year, month, today):
     """Common free money at the end of M-1 minus the flows of M already in the balance.
 
@@ -324,6 +344,7 @@ def measure_position(common, year, month, today):
     Never creates anything.
     """
     from app.services.balance_service import free_money
+    from app.services.budget_service import budget_month_start
     if not balance_fresh(common, today):
         return None
     prev_year, prev_month = _prev(year, month)
@@ -338,15 +359,8 @@ def measure_position(common, year, month, today):
         # M-1 was never used (no plan, nothing classified: first month of the household, created on
         # the fly when preparing the plan): its envelopes will never be spent, they are no deficit
         position += fm.remaining
-    else:
-        # M-1 is over when M is prepared: what its envelopes without carry-over did not spend is
-        # free again (carried remainders roll into M's envelopes, carry-ins are out of the need).
-        # A direct debit (fixed_auto) not passed yet will still come: it stays reserved.
-        from app.models import Category
-        from app.services.balance_service import category_remaining
-        position += sum(category_remaining(prev_bm, c) for c in Category.query.filter(
-            Category.pot_id == common.id, Category.carry_over.is_(False),
-            Category.type != 'fixed_auto'))
+    elif today >= budget_month_start(common, year, month):
+        position += _unspent_freed(common, prev_bm, year, month)
     # the balance already holds the flows of month M (rent, incomes, contributions) when it has started
     return position - _month_flows_in_balance(common, year, month)
 
