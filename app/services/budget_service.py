@@ -6,6 +6,7 @@ from app.models.pot import Pot
 from app.models.user import User
 from app.models.operation import Operation
 from app.models.adjustment import BudgetAdjustment
+from app.services.request_cache import memo
 
 
 def target_budget_month(income_date, income_start_day):
@@ -162,7 +163,12 @@ def _compute_carry_in(budget_month, category):
 
 
 def get_category_effective_budget(budget_month, category):
-    """Effective budget = base_allocated + sum of adjustments."""
+    """Effective budget = base_allocated + sum of adjustments (memoized per request)."""
+    return memo(('effective', budget_month.id, category.id),
+                lambda: _effective_uncached(budget_month, category))
+
+
+def _effective_uncached(budget_month, category):
     bmc = BudgetMonthCategory.query.filter_by(
         budget_month_id=budget_month.id, category_id=category.id
     ).first()
@@ -205,7 +211,12 @@ def _spent_query(category, year, month, *columns):
 
 
 def spent_for_category(category, year, month):
-    """Debits minus refunds (credits) classified on this category during budget month (year, month)."""
+    """Debits minus refunds (credits) classified on this category during budget month (year, month).
+    Memoized per request."""
+    return memo(('spent', category.id, year, month), lambda: _spent_uncached(category, year, month))
+
+
+def _spent_uncached(category, year, month):
     signed = db.case((Operation.direction == 'credit', -Operation.amount), else_=Operation.amount)
     result = _spent_query(category, year, month, db.func.sum(signed)).scalar()
     return float(result or 0.0)
