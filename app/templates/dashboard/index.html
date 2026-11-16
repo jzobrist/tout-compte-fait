@@ -64,7 +64,7 @@
 </div>
 
 <!-- Category list (HTMX target) -->
-<div id="category-list">
+<div id="category-list" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
   {% include 'dashboard/_category_list.html' %}
 </div>
 

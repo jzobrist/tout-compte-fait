@@ -9,7 +9,7 @@ from app.models.operation import Operation
 from app.routes.forms import OperationForm
 from app.services.import_service import import_banque_populaire_csv
 from app.services.access_service import accessible_pots, can_access_pot, get_current_pot, load_pot_object_or_404
-from app.routes.dashboard import detail_response_or_none
+from app.routes.dashboard import detail_response_or_none, render_gauges
 from app.services.budget_service import get_or_create_budget_month, recalculate_budget_month
 from app.services.pointage_service import ClassificationError, build_panel, classify, recategorize_entry
 from app.services.reconcile_service import eligible_entries, link, unlink
@@ -50,23 +50,9 @@ def add():
         db.session.add(op)
         db.session.commit()
         if request.headers.get('HX-Request'):
-            from app.services.budget_service import (
-                get_or_create_budget_month, recalculate_budget_month,
-                get_spent_for_category, compute_daily_metrics
-            )
-            op_date = op.date
-            bm = get_or_create_budget_month(category.pot_id, op_date.year, op_date.month)
+            bm = get_or_create_budget_month(category.pot_id, op.date.year, op.date.month)
             recalculate_budget_month(bm)
-            all_cats = Category.query.filter_by(pot_id=category.pot_id).all()
-            today = datetime.date.today()
-            days_in_month = calendar.monthrange(op_date.year, op_date.month)[1]
-            current_day = today.day if (op_date.year == today.year and op_date.month == today.month) else days_in_month
-            cat_data = []
-            for cat in all_cats:
-                spent = get_spent_for_category(bm, cat)
-                metrics = compute_daily_metrics(bm, cat, current_day, days_in_month, spent)
-                cat_data.append({'category': cat, 'metrics': metrics, 'type': cat.type})
-            return render_template('dashboard/_category_list.html', cat_data=cat_data, year=bm.year, month=bm.month)
+            return render_gauges(bm, datetime.date.today())
         return redirect(url_for('dashboard.index'))
     # Validation failed / GET: never re-render choices wider than the current pot
     cats = Category.query.filter_by(pot_id=get_current_pot().id).order_by(Category.name).all()

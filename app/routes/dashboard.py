@@ -8,6 +8,7 @@ from app.models.income import Income
 from app.extensions import db
 from app.services.access_service import get_current_pot, load_pot_object_or_404
 from app.services.balance_service import free_money
+from app.services.gauge_service import build_gauges
 from app.services.alert_service import MONTHS_FR, MONTHS_FR_ABBR, free_money_alerts
 from app.services.budget_service import (
     get_or_create_budget_month, recalculate_budget_month,
@@ -39,12 +40,7 @@ def index():
     if bm.total_income > 0 or pot.kind == 'common':
         recalculate_budget_month(bm)
 
-    categories = Category.query.filter_by(pot_id=pot.id).all()
-    cat_data = []
-    for cat in categories:
-        spent = get_spent_for_category(bm, cat)
-        metrics = compute_daily_metrics(bm, cat, current_day, days_in_month, spent)
-        cat_data.append({'category': cat, 'metrics': metrics, 'type': cat.type})
+    cat_data = build_gauges(bm, current_day, days_in_month)
 
     # Alert detection — pace alerts only for dynamic categories
     alerts = []
@@ -89,7 +85,17 @@ def index():
         total_remaining=total_remaining,
         fm=fm,
         balance_alerts=balance_alerts,
+        editable=is_current,
     )
+
+
+def render_gauges(bm, today):
+    """Gauge list fragment of a budget month (close/reopen buttons only on the current month)."""
+    days_in_month = calendar.monthrange(bm.year, bm.month)[1]
+    current_day = today.day if (bm.year, bm.month) == (today.year, today.month) else days_in_month
+    editable = (bm.year, bm.month) == target_budget_month(today, bm.pot.income_start_day or 1)
+    return render_template('dashboard/_category_list.html', cat_data=build_gauges(bm, current_day, days_in_month),
+                           year=bm.year, month=bm.month, editable=editable)
 
 def _prev_month(year, month):
     m = month - 1
