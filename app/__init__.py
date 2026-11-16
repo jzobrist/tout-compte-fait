@@ -110,6 +110,9 @@ def create_app(config_name=None):
             return messages
         return {'category_notices': category_notices}
 
+    from . import server_timing
+    server_timing.install(app)
+
     from .services import request_cache
     app.teardown_request(request_cache.clear)   # per-request memo never outlives its request
 
