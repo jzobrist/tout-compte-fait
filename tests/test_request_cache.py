@@ -131,3 +131,67 @@ def test_cleared_at_request_teardown(app, db, setup, sql_count):
         before = sql_count['n']
         spent_for_category(food, bm.year, bm.month)
         assert sql_count['n'] > before
+
+
+# --- contribution hot spots ------------------------------------------------------------------
+
+def _no_sql_on_second_call(app, sql_count, fn):
+    with app.test_request_context():
+        first = fn()
+        before = sql_count['n']
+        second = fn()
+        assert sql_count['n'] == before
+        return first, second
+
+
+def test_contribution_functions_cached(app, db, setup, sql_count):
+    from app.models import ContributionPlan
+    from app.services import ceiling_service, contribution_service as cs, refloat_service
+    h, pot, food, other, bm = setup
+    common = h.common
+    y, m = bm.year, bm.month
+    a, b = _no_sql_on_second_call(app, sql_count, lambda: cs.member_base(h.user_a, y, m))
+    assert (a.salary, a.constrained, a.user.id) == (b.salary, b.constrained, b.user.id)
+    a, b = _no_sql_on_second_call(app, sql_count, lambda: [u.id for u in cs._members(common)])
+    assert a == b == sorted([h.user_a.id, h.user_b.id])
+    a, b = _no_sql_on_second_call(app, sql_count, lambda: cs.advance_for(common, h.user_a, y, m))
+    assert a == b
+    a, b = _no_sql_on_second_call(app, sql_count, lambda: cs._common_fixed(common, y, m))
+    assert a == b
+    for getter in (cs.get_plan, refloat_service.get_plan, ceiling_service.get_plan):
+        a, b = _no_sql_on_second_call(app, sql_count, lambda g=getter: g(common, y, m))
+        assert a is b
+    a, b = _no_sql_on_second_call(app, sql_count, lambda: ceiling_service.report(bm).envelopes[food.id].amount)
+    assert a == b
+
+
+def test_report_returns_independent_copies(app, db, setup):
+    from app.services import ceiling_service
+    h, pot, food, other, bm = setup
+    with app.test_request_context():
+        first = ceiling_service.report(bm)
+        original = first.envelopes[food.id].amount
+        first.envelopes[food.id].amount = -1.0
+        first.envelopes.clear()
+        assert ceiling_service.report(bm).envelopes[food.id].amount == original
+
+
+def test_get_plan_cached_none_then_created(app, db, setup):
+    from app.models import ContributionPlan
+    from app.services import contribution_service as cs
+    h, pot, food, other, bm = setup
+    with app.test_request_context():
+        assert cs.get_plan(h.common, 2031, 3) is None
+        db.session.add(ContributionPlan(pot_id=h.common.id, year=2031, month=3))
+        db.session.flush()
+        assert cs.get_plan(h.common, 2031, 3) is not None
+
+
+def test_member_base_follows_salary_change(app, db, setup):
+    from app.services import contribution_service as cs
+    h, pot, food, other, bm = setup
+    with app.test_request_context():
+        before = cs.member_base(h.user_a, bm.year, bm.month).salary
+        bm.total_income += 500           # personal_a's month, not flushed
+        assert cs.member_base(h.user_a, bm.year, bm.month).salary == before + 500
+

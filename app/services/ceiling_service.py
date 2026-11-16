@@ -4,11 +4,13 @@ Without a stored row an envelope follows its preset (percentage of the disponibl
 refloat auto cut); a stored row is a slider the member moved. Once the month is validated
 (`EnvelopePlan.validated_at`) everything is frozen.
 """
+import copy
 import math
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from app.extensions import db
+from app.services.request_cache import memo, memo_object
 from app.models.budget import BudgetMonth, BudgetMonthCategory
 from app.models.category import Category
 from app.models.ceiling import EnvelopeCeiling, EnvelopePlan
@@ -45,7 +47,8 @@ class CeilingReport:
 
 
 def get_plan(pot, year, month):
-    return EnvelopePlan.query.filter_by(pot_id=pot.id, year=year, month=month).first()
+    return memo_object(('eplan', pot.id, year, month), EnvelopePlan,
+                       lambda: EnvelopePlan.query.filter_by(pot_id=pot.id, year=year, month=month).first())
 
 
 def is_frozen(pot, year, month):
@@ -69,7 +72,12 @@ def pin_current(pot, year, month, category, commit=True):
 
 
 def report(bm):
-    """Ceilings of every dynamic envelope of the budget month. Never writes."""
+    """Ceilings of every dynamic envelope of the budget month. Never writes. Memoized per request;
+    each call gets its own copy."""
+    return copy.deepcopy(memo(('report', bm.id), lambda: _report_uncached(bm)))
+
+
+def _report_uncached(bm):
     from app.models.pot import Pot
     pot = bm.pot or db.session.get(Pot, bm.pot_id)
     cats = Category.query.filter_by(pot_id=pot.id, type='dynamic').order_by(Category.id).all()

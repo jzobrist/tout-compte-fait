@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass, field
 
 from app.extensions import db
+from app.services.request_cache import memo_object
 from app.models.budget import BudgetMonthCategory
 from app.models.category import Category
 from app.models.pot import Pot
@@ -42,7 +43,8 @@ def _next(year, month):
 
 
 def get_plan(pot, year, month):
-    return RefloatPlan.query.filter_by(pot_id=pot.id, year=year, month=month).first()
+    return memo_object(('rplan', pot.id, year, month), RefloatPlan,
+                       lambda: RefloatPlan.query.filter_by(pot_id=pot.id, year=year, month=month).first())
 
 
 def _common_pot(household_id):

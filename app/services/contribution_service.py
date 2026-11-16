@@ -6,6 +6,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
+from app.services.request_cache import memo, memo_object, memo_objects
 from app.models.budget import BudgetMonth
 from app.models.category import Category
 from app.models.contribution import (
@@ -52,12 +53,18 @@ def constrained_total(personal_pot, year, month):
 
 
 def member_base(user, year, month):
-    """Salary of the member's personal budget month (same year/month) minus constrained fixed charges."""
+    """Salary of the member's personal budget month (same year/month) minus constrained fixed charges.
+    Memoized per request."""
+    salary, constrained = memo(('member_base', user.id, year, month),
+                               lambda: _member_base_uncached(user, year, month))
+    return MemberBase(user=user, salary=salary, constrained=constrained, salary_known=salary > 0)
+
+
+def _member_base_uncached(user, year, month):
     pot = Pot.query.filter_by(owner_id=user.id, kind='personal').one()
     bm = BudgetMonth.query.filter_by(pot_id=pot.id, year=year, month=month).first()
     salary = float(bm.total_income or 0.0) if bm else 0.0
-    constrained = constrained_total(pot, year, month)
-    return MemberBase(user=user, salary=salary, constrained=constrained, salary_known=salary > 0)
+    return salary, constrained_total(pot, year, month)
 
 
 def split_equal_rav(bases, need):
@@ -225,11 +232,13 @@ def _next(year, month):
 
 
 def get_plan(common, year, month):
-    return ContributionPlan.query.filter_by(pot_id=common.id, year=year, month=month).first()
+    return memo_object(('cplan', common.id, year, month), ContributionPlan, lambda: ContributionPlan.query
+                       .filter_by(pot_id=common.id, year=year, month=month).first())
 
 
 def _members(common):
-    return User.query.filter_by(household_id=common.household_id).order_by(User.id).all()
+    return memo_objects(('members', common.household_id), User, lambda: User.query
+                        .filter_by(household_id=common.household_id).order_by(User.id).all())
 
 
 def _common_of(personal_pot):
@@ -437,6 +446,10 @@ def bases(plan):
 
 
 def _common_fixed(common, year, month):
+    return memo(('common_fixed', common.id, year, month), lambda: _common_fixed_uncached(common, year, month))
+
+
+def _common_fixed_uncached(common, year, month):
     return sum(fixed_amount_for(c, year, month) for c in Category.query.filter(
         Category.pot_id == common.id, Category.type.in_(('fixed_auto', 'fixed_amount'))))
 
@@ -494,7 +507,12 @@ def caps(plan):
 
 
 def advance_for(common, user, year, month):
-    """Σ common fixed charges paid from `user`'s personal account (live settings)."""
+    """Σ common fixed charges paid from `user`'s personal account (live settings). Memoized per request."""
+    return memo(('advance', common.id, user.id, year, month),
+                lambda: _advance_for_uncached(common, user, year, month))
+
+
+def _advance_for_uncached(common, user, year, month):
     return float(sum(fixed_amount_for(c, year, month) for c in Category.query.filter(
         Category.pot_id == common.id, Category.paid_by_user_id == user.id,
         Category.type.in_(('fixed_auto', 'fixed_amount')))))

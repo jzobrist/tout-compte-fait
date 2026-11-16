@@ -29,6 +29,19 @@ def memo(key, compute):
     return cache[key]
 
 
+def memo_object(key, model, compute):
+    """Memo of a query returning one ORM object or None: only its id is kept, the object comes
+    back from the session's identity map (no SQL while it is loaded)."""
+    oid = memo(key, lambda: getattr(compute(), 'id', None))
+    return db.session.get(model, oid) if oid is not None else None
+
+
+def memo_objects(key, model, compute):
+    """Same for a list of ORM objects (order kept)."""
+    ids = memo(key, lambda: [o.id for o in compute()])
+    return [db.session.get(model, i) for i in ids]
+
+
 def _on_execute(orm_execute_state):
     if not orm_execute_state.is_select:
         clear()
