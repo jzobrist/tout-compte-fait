@@ -245,6 +245,7 @@ a:hover { color: var(--primary-dark); }
 .cat-amount.ok     { color: var(--primary); }
 .cat-amount.warn   { color: var(--warn); }
 .cat-amount.danger { color: var(--danger); }
+.cat-amount.done   { color: var(--ok); }
 
 .cat-progress {
   height: 6px;
@@ -261,6 +262,7 @@ a:hover { color: var(--primary-dark); }
 .cat-progress-bar.ok     { background: var(--primary); }
 .cat-progress-bar.warn   { background: var(--warn); }
 .cat-progress-bar.danger { background: var(--danger); }
+.cat-progress-bar.done   { background: var(--ok); }
 
 .cat-meta {
   font-size: .72rem;

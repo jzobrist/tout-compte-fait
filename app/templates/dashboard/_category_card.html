@@ -1,26 +1,31 @@
-{# Compared to the cent: binary floats never make an exactly spent envelope look overspent #}
+{# state / pct come from gauge_service (amounts compared to the cent) #}
 {% set spent = item.metrics.spent|round(2) %}
 {% set effective = item.metrics.effective|round(2) %}
-{% if effective > 0 %}
-  {% set pct_raw = (spent / effective * 100) %}
-{% elif spent > 0 %}
-  {# spending on a 0 € envelope: show it as fully overspent #}
-  {% set pct_raw = 101 %}
-{% else %}
-  {% set pct_raw = 0 %}
-{% endif %}
-{% if pct_raw > 100 %}{% set pct = 100 %}{% else %}{% set pct = pct_raw %}{% endif %}
-{% if pct_raw > 100 %}{% set state = 'danger' %}{% elif pct_raw > 80 %}{% set state = 'warn' %}{% else %}{% set state = 'ok' %}{% endif %}
+{% set state = item.state %}
 {% set type_class = 'type-' + item.category.type | replace('_', '-') %}
 
-<div class="cat-card {{ type_class }}" id="cat-{{ item.category.id }}">
+<div class="cat-card {{ type_class }} {{ state }}" id="cat-{{ item.category.id }}">
   <div class="d-flex justify-content-between align-items-center">
     {% set detail_url = url_for('dashboard.category_detail_view', cat_id=item.category.id, year=year, month=month) %}
     <a href="#" class="cat-name text-reset text-decoration-none"
        hx-get="{{ detail_url }}" hx-target="#detail-modal-body" hx-swap="innerHTML"
-       data-bs-toggle="modal" data-bs-target="#detailModal">{{ item.category.name }}</a>
+       data-bs-toggle="modal" data-bs-target="#detailModal">{% if state == 'done' %}✓ {% endif %}{{ item.category.name }}</a>
     <div class="d-flex align-items-center gap-2">
       <span class="cat-amount {{ state }}">{{ spent|money }}€ / {{ effective|money }}€</span>
+      {% if editable %}
+      {% if item.closed %}
+      <button class="btn-adjust"
+              hx-post="{{ url_for('dashboard.reopen_category', cat_id=item.category.id) }}"
+              hx-target="#category-list" hx-swap="innerHTML"
+              title="Rouvrir">↺</button>
+      {% else %}
+      <button class="btn-adjust"
+              hx-post="{{ url_for('dashboard.close_category', cat_id=item.category.id) }}"
+              hx-target="#category-list" hx-swap="innerHTML"
+              hx-confirm="Clore libère le reste : seulement si tous les prélèvements sont passés."
+              title="Clore">✓</button>
+      {% endif %}
+      {% endif %}
       <button class="btn-adjust"
               hx-get="{{ url_for('adjustments.form') }}"
               hx-target="#adjustment-modal-body"
@@ -36,7 +41,7 @@
     </div>
   </div>
   <div class="cat-progress">
-    <div class="cat-progress-bar {{ state }}" style="width: {{ pct }}%;"></div>
+    <div class="cat-progress-bar {{ state }}" style="width: {{ item.pct }}%;"></div>
   </div>
   <div class="cat-meta">
     <span>{{ spent|money }}€ dépensé · {{ item.metrics.remaining_daily|money }}€/j restant</span>

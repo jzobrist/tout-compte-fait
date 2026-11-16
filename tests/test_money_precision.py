@@ -16,18 +16,21 @@ def test_no_single_precision_float_column_on_mysql(app):
 
 
 def _card(app, spent, effective):
+    from app.services.gauge_service import gauge_state
+    state, pct_raw = gauge_state(spent, effective, fixed=True, closed=False)
     item = SimpleNamespace(
         category=SimpleNamespace(id=1, name='Internet / Mobile', type='fixed_auto'),
         metrics={'spent': spent, 'effective': effective, 'remaining_daily': 0.0,
-                 'balance': effective - spent})
+                 'balance': effective - spent},
+        state=state, pct=min(pct_raw, 100))
     with app.test_request_context('/'):
         return render_template('dashboard/_category_card.html', item=item, year=2026, month=11)
 
 
 @pytest.mark.parametrize('spent', [37.970001220703125, 37.96999931335449])
-def test_gauge_exactly_spent_is_warn_not_danger(app, spent):
+def test_gauge_exactly_spent_is_done_not_danger(app, spent):
     html = _card(app, spent, 37.97)
-    assert 'cat-progress-bar warn' in html
+    assert 'cat-progress-bar done' in html
     assert 'danger' not in html
     assert '-0,00' not in html
 
