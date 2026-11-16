@@ -277,3 +277,16 @@ def test_pot_spent_total_one_query_same_result(app, db, setup, sql_count):
         total = pot_spent_total(pot.id, bm.year, bm.month)
         assert sql_count['n'] - before == 1, sql_count.get('stmts', [])[before:]
     assert total == 37.25
+
+
+def test_month_category_row_duplicates_pick_lowest_id(app, db, setup):
+    """No unique constraint on (budget_month_id, category_id): with duplicates, every path must
+    read the same row as the remaining `.first()` lookups (lowest id)."""
+    h, pot, food, other, bm = setup
+    from app.services.budget_service import month_category_row
+    first = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=food.id).first()
+    dup = BudgetMonthCategory(budget_month_id=bm.id, category_id=food.id, base_allocated=1.0, carry_in=0.0)
+    db.session.add(dup)
+    db.session.commit()
+    with app.test_request_context():
+        assert month_category_row(bm, food).id == min(first.id, dup.id)

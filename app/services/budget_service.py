@@ -171,9 +171,17 @@ def get_category_effective_budget(budget_month, category):
 def month_category_row(budget_month, category):
     """The BudgetMonthCategory of `category` in `budget_month`, or None. All rows of the month are
     read in one query and memoized per request."""
-    rows = memo(('bmcs', budget_month.id), lambda: {
-        r.category_id: r for r in BudgetMonthCategory.query.filter_by(budget_month_id=budget_month.id)})
+    rows = memo(('bmcs', budget_month.id), lambda: _month_rows_uncached(budget_month))
     return rows.get(category.id)
+
+
+def _month_rows_uncached(budget_month):
+    # no unique constraint on (budget_month_id, category_id): with duplicates keep the lowest id,
+    # the row the remaining `.first()` lookups (recalculate, carry-in) read and write
+    rows = {}
+    for r in BudgetMonthCategory.query.filter_by(budget_month_id=budget_month.id).order_by(BudgetMonthCategory.id):
+        rows.setdefault(r.category_id, r)
+    return rows
 
 
 def _effective_uncached(budget_month, category):
