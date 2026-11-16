@@ -44,7 +44,8 @@
     <div class="cat-progress-bar {{ state }}" style="width: {{ item.pct }}%;"></div>
   </div>
   <div class="cat-meta">
-    <span>{{ spent|money }}€ dépensé · {{ item.metrics.remaining_daily|money }}€/j restant</span>
+    {% set pl = period_label(item.category, year, month) %}
+    <span>{{ spent|money }}€ dépensé · {{ item.metrics.remaining_daily|money }}€/j restant{% if pl %} · {{ pl }}{% endif %}</span>
     <span class="cat-balance {{ 'ok' if item.metrics.balance|round(2) >= 0 else 'danger' }}">
       {{ item.metrics.balance|money }}€
     </span>

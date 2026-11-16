@@ -12,6 +12,33 @@ class CategoryError(Exception):
     """A category operation refused for a user-facing reason."""
 
 _SETTING_KEYS = ('amount', 'percentage', 'min_amount', 'max_amount', 'carry_over')
+_PERIOD_KEYS = ('active_from', 'active_until')
+
+
+def active_in(category, year, month):
+    """True when no bound of the charge's period excludes budget month (year, month)."""
+    ym = (year, month)
+    start, end = category.active_from, category.active_until
+    if start is not None and ym < (start.year, start.month):
+        return False
+    return end is None or ym <= (end.year, end.month)
+
+
+def period_label(category, year, month):
+    """Short French text about a limited fixed charge's period for budget month (year, month)."""
+    from app.services.alert_service import MONTHS_FR
+    if category.type not in ('fixed_auto', 'fixed_amount'):
+        return None
+    start, end = category.active_from, category.active_until
+    ym = (year, month)
+    if start is not None and ym < (start.year, start.month):
+        return f'à partir de {MONTHS_FR[start.month - 1]} {start.year}'
+    if end is None or ym > (end.year, end.month):
+        return None
+    left = (end.year - year) * 12 + end.month - month + 1
+    if left == 1:
+        return 'dernière échéance'
+    return f"jusqu'en {MONTHS_FR[end.month - 1]} {end.year} · {left} échéances restantes"
 
 
 def _ensure_family(category):
@@ -165,16 +192,32 @@ def _apply_settings(cat, settings):
     if pot.is_common and (paid_by or cat.paid_by_user_id):
         from app.services.contribution_service import advance_locked
         amount = settings.get('amount', cat.amount)
-        if ((paid_by != cat.paid_by_user_id or (amount or 0.0) != (cat.amount or 0.0))
+        period_changed = any(k in settings and settings[k] != getattr(cat, k) for k in _PERIOD_KEYS)
+        if ((paid_by != cat.paid_by_user_id or (amount or 0.0) != (cat.amount or 0.0) or period_changed)
                 and advance_locked(pot, date.today())):
             raise CategoryError('Plan du mois validé : rouvrez-le pour changer ce réglage.')
     cat.paid_by_user_id = paid_by
     for key in _SETTING_KEYS:
         if key in settings:
             setattr(cat, key, settings[key])
+    _apply_period(cat, settings)
     cat.constrained = (bool(settings.get('constrained')) and not pot.is_common
                        and cat.type in ('fixed_auto', 'fixed_amount'))
     cat.provision = bool(settings.get('provision')) and pot.is_common
+
+
+def _apply_period(cat, settings):
+    """First/last budget month of a fixed charge (day 1); never on dynamic or the transfer category."""
+    if cat.type not in ('fixed_auto', 'fixed_amount') or cat.role == 'common_transfer':
+        cat.active_from = cat.active_until = None
+        return
+    start = settings.get('active_from', cat.active_from)
+    end = settings.get('active_until', cat.active_until)
+    start = start.replace(day=1) if start else None
+    end = end.replace(day=1) if end else None
+    if start and end and start > end:
+        raise CategoryError('Le premier mois doit précéder le dernier.')
+    cat.active_from, cat.active_until = start, end
 
 
 def create_category(user, name, type, common, personal, settings):
@@ -342,7 +385,8 @@ def scope_impacts(user, category):
 
 def relevant_settings(settings, type):
     """Drop the settings the type cannot carry (hidden form fields still get posted)."""
-    keys = ('percentage', 'min_amount', 'max_amount') if type != 'dynamic' else ('amount',)
+    keys = (('percentage', 'min_amount', 'max_amount') if type != 'dynamic'
+            else ('amount', 'active_from', 'active_until'))
     return {**settings, **{k: None for k in keys}}
 
 
@@ -419,6 +463,7 @@ def change_type(user, category, type, commit=True):
             member.amount = None
             member.constrained = False
             member.paid_by_user_id = None
+            member.active_from = member.active_until = None
         else:
             member.percentage = None
             member.min_amount = None

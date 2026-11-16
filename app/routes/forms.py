@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired
-from wtforms import HiddenField, StringField, PasswordField, FloatField, SelectField, BooleanField, IntegerField, DateField
+from wtforms import HiddenField, StringField, PasswordField, FloatField, SelectField, BooleanField, IntegerField, DateField, MonthField
 from wtforms.validators import InputRequired, DataRequired, Email, Length, Optional, NumberRange
 import datetime
 
@@ -51,13 +51,15 @@ class CategorySettingsForm(FlaskForm):
     carry_over = BooleanField('Reporter le solde au mois suivant', default=True)
     constrained = BooleanField('Charge contrainte (compte dans le reste à vivre)', default=False)
     provision = BooleanField('Provision (peut recevoir le surplus du commun)', default=False)
+    active_from = MonthField('Premier mois', validators=[Optional()])
+    active_until = MonthField('Dernier mois', validators=[Optional()])
     paid_by = SelectField('Payé depuis le compte perso de', coerce=int, choices=[(0, '— personne —')],
                           default=0, validators=[Optional()])
 
     def values(self):
         return {k: getattr(self, k).data for k in
                 ('amount', 'percentage', 'min_amount', 'max_amount', 'carry_over', 'constrained', 'provision',
-                 'paid_by')}
+                 'paid_by', 'active_from', 'active_until')}
 
 class AdjustmentForm(FlaskForm):
     from_category_id = SelectField('Depuis', coerce=int, validators=[DataRequired()])

@@ -19,7 +19,8 @@ def _card(app, spent, effective):
     from app.services.gauge_service import gauge_state
     state, pct_raw = gauge_state(spent, effective, fixed=True, closed=False)
     item = SimpleNamespace(
-        category=SimpleNamespace(id=1, name='Internet / Mobile', type='fixed_auto'),
+        category=SimpleNamespace(id=1, name='Internet / Mobile', type='fixed_auto',
+                                 active_from=None, active_until=None),
         metrics={'spent': spent, 'effective': effective, 'remaining_daily': 0.0,
                  'balance': effective - spent},
         state=state, pct=min(pct_raw, 100))

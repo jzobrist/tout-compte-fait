@@ -30,6 +30,10 @@ class Category(db.Model):
     paid_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id', name='fk_category_paid_by_user_id',
                                                           ondelete='SET NULL'), nullable=True)
 
+    # fixed types: first / last budget month the charge applies to (day 1 of the month; None = no bound)
+    active_from = db.Column(db.Date, nullable=True)
+    active_until = db.Column(db.Date, nullable=True)
+
     pot = db.relationship('Pot', back_populates='categories')
     paid_by = db.relationship('User', foreign_keys=[paid_by_user_id])
     operations = db.relationship('Operation', back_populates='category', lazy='dynamic', cascade='save-update, merge')
