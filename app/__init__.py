@@ -110,6 +110,21 @@ def create_app(config_name=None):
             return messages
         return {'category_notices': category_notices}
 
+    @app.context_processor
+    def inject_plan_pending():
+        from flask import g
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return {}
+
+        def plan_pending():
+            """Viewer has a validation to do on « Plan du mois » (computed once per page, lazily)."""
+            if '_plan_pending' not in g:
+                from .services import nav_service
+                g._plan_pending = nav_service.plan_pending(current_user)
+            return g._plan_pending
+        return {'plan_pending': plan_pending}
+
     @app.template_global()
     def category_label(category):
         from .services.category_service import display_name

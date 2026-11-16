@@ -114,3 +114,46 @@ def test_default_today(db, household_clean, nav_today):
     _force(h)
     assert plan_pending(h.user_a) is True
 
+
+
+# --- navbar rendering -------------------------------------------------------
+
+def test_navbar_links_and_menu(db, household_clean):
+    html = household_clean.client_a.get('/').get_data(as_text=True)
+    assert 'Tableau de bord' in html
+    assert 'class="dropdown-menu' in html
+    for label in ('Plan du mois', 'Revenus', 'Paramètres', 'Déconnexion'):
+        assert label in html
+    assert 'id="current-pot-name"' not in html          # no duplicate pot name
+
+
+def test_active_link_dashboard(db, household_clean):
+    import re
+    html = household_clean.client_a.get('/').get_data(as_text=True)
+    assert re.search(r'class="nav-link active"[^>]*href="/"', html) or \
+        re.search(r'href="/"[^>]*class="nav-link active"', html)
+    assert not re.search(r'class="nav-link active"[^>]*href="/history', html)
+
+
+def test_pending_button_and_mobile_alert(db, household_clean, nav_today):
+    h = household_clean
+    _j6_setup(db, h)
+    _force(h)
+    html = h.client_a.get('/').get_data(as_text=True)
+    assert 'Plan à valider' in html and 'id="plan-pending-alert"' in html
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'Plan à valider' in html and 'id="plan-pending-alert"' not in html
+
+
+def test_no_button_when_nothing_to_do(db, household_clean, nav_today):
+    html = household_clean.client_a.get('/').get_data(as_text=True)
+    assert 'Plan à valider' not in html and 'plan-pending-alert' not in html
+
+
+def test_htmx_fragment_does_not_compute_pending(db, household_clean, nav_today, monkeypatch):
+    calls = []
+    monkeypatch.setattr(nav_service, 'plan_pending', lambda *a, **k: calls.append(1) or False)
+    household_clean.client_a.get('/operations/pointage', headers=HX)
+    assert calls == []
+    household_clean.client_a.get('/')
+    assert calls == [1]                                   # computed once, cached for the page

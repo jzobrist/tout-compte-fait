@@ -27,35 +27,50 @@
 </head>
 <body>
 {% macro pot_switcher() %}
-    <div class="pot-switcher d-flex align-items-center gap-1">
-        <span class="fw-semibold" id="current-pot-name">{{ current_pot.name }}</span>
+    <div class="btn-group btn-group-sm pot-switcher" role="group" aria-label="Pot affiché">
         {% for p in accessible_pots %}
+        {% set label = 'Commun' if p.kind == 'common' else 'Mon perso' %}
         {% if p.id == current_pot.id %}
-        <span class="btn btn-sm btn-secondary disabled">{{ 'Commun' if p.kind == 'common' else 'Mon perso' }}</span>
+        <span class="btn btn-sm btn-secondary active" aria-current="true">{{ label }}</span>
         {% else %}
         <form method="post" action="{{ url_for('pots.select', pot_id=p.id) }}" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'Commun' if p.kind == 'common' else 'Mon perso' }}</button>
+            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ label }}</button>
         </form>
         {% endif %}
         {% endfor %}
     </div>
 {% endmacro %}
+{% macro nav_link(endpoint, label, active) %}
+    <a class="nav-link{{ ' active' if active else '' }}" href="{{ url_for(endpoint) }}"{% if active %} aria-current="page"{% endif %}>{{ label }}</a>
+{% endmacro %}
     {% if current_user.is_authenticated %}
+    {% set ep = request.endpoint or '' %}
     <!-- Desktop navbar (hidden on mobile via CSS) -->
     <nav class="navbar navbar-expand-lg main-navbar">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}">💰 Tout Compte Fait</a>
+        <div class="container flex-nowrap">
+            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}" title="Tout Compte Fait">💰<span class="d-none d-xl-inline"> Tout Compte Fait</span></a>
             {{ pot_switcher() }}
             <div class="navbar-nav ms-auto d-flex flex-row gap-3 align-items-center">
-                <a class="nav-link" href="{{ url_for('plan.index') }}">Plan du mois</a>
-                <a class="nav-link" href="{{ url_for('incomes.index') }}">Revenus</a>
-                <a class="nav-link" href="{{ url_for('accounts.index') }}">Comptes</a>
-                <a class="nav-link" href="{{ url_for('history.index') }}">Historique</a>
-                <a class="nav-link" href="{{ url_for('operations.pointage') }}">Pointage</a>
-                <a class="nav-link" href="{{ url_for('settings.index') }}">⚙️ Paramètres</a>
-                <a class="nav-link" href="{{ url_for('auth.logout') }}">Déconnexion</a>
-                <button class="btn btn-sm btn-outline-secondary ms-2" id="theme-toggle" title="Changer le thème">🌙</button>
+                {{ nav_link('dashboard.index', 'Tableau de bord', ep.startswith('dashboard')) }}
+                {{ nav_link('operations.pointage', 'Pointage', ep == 'operations.pointage') }}
+                {{ nav_link('history.index', 'Historique', ep.startswith('history')) }}
+                {{ nav_link('accounts.index', 'Comptes', ep.startswith('accounts')) }}
+                {% if plan_pending() %}
+                <a class="btn btn-sm btn-danger text-nowrap" href="{{ url_for('plan.index') }}">Plan à valider</a>
+                {% endif %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                            data-bs-toggle="dropdown" aria-expanded="false" title="Menu">⚙️</button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item{{ ' active' if ep.startswith('plan') else '' }}" href="{{ url_for('plan.index') }}">Plan du mois</a></li>
+                        <li><a class="dropdown-item{{ ' active' if ep.startswith('incomes') else '' }}" href="{{ url_for('incomes.index') }}">Revenus</a></li>
+                        <li><a class="dropdown-item{{ ' active' if ep.startswith('settings') else '' }}" href="{{ url_for('settings.index') }}">Paramètres</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item" type="button" id="theme-toggle">🌙 Thème sombre</button></li>
+                        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Déconnexion</a></li>
+                    </ul>
+                </div>
             </div>
         </div>
     </nav>
@@ -64,6 +79,11 @@
     {% endif %}
 
     <div class="container mt-4 mb-4">
+        {% if current_user.is_authenticated and request.endpoint != 'plan.index' and plan_pending() %}
+        <div class="alert alert-danger d-md-none" id="plan-pending-alert">
+            Plan du mois à valider — <a href="{{ url_for('plan.index') }}" class="alert-link">Ouvrir le plan</a>
+        </div>
+        {% endif %}
         {% if current_user.is_authenticated and bank_banner %}
         <div class="alert alert-warning" id="bank-banner">
             {% if bank_banner == 'expiring' %}Votre accès bancaire expire bientôt.
@@ -164,7 +184,7 @@
       const html = document.documentElement;
       function applyThemeIcon() {
         const t = document.getElementById('theme-toggle');
-        if (t) t.textContent = html.classList.contains('dark') ? '☀️' : '🌙';
+        if (t) t.textContent = html.classList.contains('dark') ? '☀️ Thème clair' : '🌙 Thème sombre';
       }
       applyThemeIcon();
       const toggle = document.getElementById('theme-toggle');
