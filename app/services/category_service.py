@@ -24,6 +24,23 @@ def active_in(category, year, month):
     return end is None or ym <= (end.year, end.month)
 
 
+def period_label(category, year, month):
+    """Short French text about a limited fixed charge's period for budget month (year, month)."""
+    from app.services.alert_service import MONTHS_FR
+    if category.type not in ('fixed_auto', 'fixed_amount'):
+        return None
+    start, end = category.active_from, category.active_until
+    ym = (year, month)
+    if start is not None and ym < (start.year, start.month):
+        return f'à partir de {MONTHS_FR[start.month - 1]} {start.year}'
+    if end is None or ym > (end.year, end.month):
+        return None
+    left = (end.year - year) * 12 + end.month - month + 1
+    if left == 1:
+        return 'dernière échéance'
+    return f"jusqu'en {MONTHS_FR[end.month - 1]} {end.year} · {left} échéances restantes"
+
+
 def _ensure_family(category):
     """Give a row with a NULL family_id (inserted outside the ORM hook) its own family before others join it."""
     if category.family_id is None and category.id is not None:

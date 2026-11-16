@@ -156,3 +156,50 @@ def test_edit_page_shows_period(db, household_clean):
     c = _cat(db, h.common, 'Vélo', active_from=DEC, active_until=MAR)
     html = h.client_a.get(f'/categories/{c.id}/edit').get_data(as_text=True)
     assert 'value="2026-12"' in html and 'value="2027-03"' in html
+
+
+# --- Task 4 ------------------------------------------------------------------------------------
+from app.services.category_service import period_label  # noqa: E402
+
+
+def test_period_label_texts():
+    c = _limited(active_from=DEC, active_until=MAR)
+    assert period_label(c, 2026, 11) == 'à partir de décembre 2026'
+    assert period_label(c, 2027, 1) == "jusqu'en mars 2027 · 3 échéances restantes"
+    assert period_label(c, 2027, 3) == 'dernière échéance'
+    assert period_label(c, 2027, 4) is None
+    assert period_label(_limited(), 2027, 1) is None
+    assert period_label(_limited(active_from=DEC), 2027, 1) is None
+    assert period_label(_limited(active_from=DEC, active_until=MAR, ), 2026, 12) == \
+        "jusqu'en mars 2027 · 4 échéances restantes"
+
+
+def _plus_months(y, m, n):
+    m0 = y * 12 + m - 1 + n
+    return date(m0 // 12, m0 % 12 + 1, 1)
+
+
+def test_dashboard_shows_period(db, household_clean):
+    from app.services.budget_service import target_budget_month
+    h = household_clean
+    pot = h.personal_a
+    y, m = target_budget_month(date.today(), pot.income_start_day or 1)
+    _cat(db, pot, 'Vélo', active_until=_plus_months(y, m, 2))
+    bm = get_or_create_budget_month(pot.id, y, m)
+    bm.total_income = 1000.0
+    recalculate_budget_month(bm)
+    h.client_a.post(f'/pots/{pot.id}/select')
+    html = h.client_a.get('/').get_data(as_text=True)
+    assert '3 échéances restantes' in html
+
+
+def test_period_label_not_on_common_plan_for_personal(db, household_clean):
+    from app.services.budget_service import target_budget_month
+    h = household_clean
+    y, m = target_budget_month(date.today(), h.personal_b.income_start_day or 1)
+    _cat(db, h.personal_b, 'Prêt B', active_from=_plus_months(y, m, 1), active_until=_plus_months(y, m, 5))
+    _cat(db, h.personal_b, 'Prêt B2', active_until=_plus_months(y, m, 5))
+    html = h.client_a.get('/plan').get_data(as_text=True)
+    assert 'échéances restantes' not in html and 'à partir de' not in html
+    html_b = h.client_b.get('/plan').get_data(as_text=True)
+    assert 'échéances restantes' in html_b    # B sees it on their own personal section

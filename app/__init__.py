@@ -116,6 +116,11 @@ def create_app(config_name=None):
         return display_name(category)
 
     @app.template_global()
+    def period_label(category, year, month):
+        from .services.category_service import period_label as label
+        return label(category, year, month)
+
+    @app.template_global()
     def account_label(op):
         """'Account (Bank)' of an operation, or None when absent or in a pot the viewer cannot access."""
         from flask_login import current_user
