@@ -4,7 +4,7 @@ from datetime import date, datetime
 import pytest
 
 from app.extensions import db as _db
-from app.models import BankAccount, ContributionPlan, Operation
+from app.models import BankAccount, Category, ContributionPlan, Operation
 from app.services import contribution_service as cs
 from app.services.pointage_service import contribution_received
 from tests.test_advance import _ref
@@ -129,16 +129,68 @@ def test_position_ignores_envelopes_of_an_unused_previous_month(db, household_cl
     assert plan.position == pytest.approx(500.0)
 
 
-def test_position_keeps_envelopes_of_a_used_previous_month(db, household_clean):
-    h = household_clean
+def _used_october(db, h, carry_over):
     loyer = _october_with_envelopes(db, h)
+    loyer.carry_over = carry_over
     _db.session.add(Operation(pot_id=h.common.id, user_id=h.user_a.id, amount=200.0,
                               date=date(2026, 10, 10), label='LOYER', direction='debit',
                               bank_label='LOYER', bank_date=date(2026, 10, 10), bank_reference='L1',
                               classification='category', category_id=loyer.id))
     _db.session.commit()
+
+
+def test_position_frees_uncarried_remaining_of_a_used_previous_month(db, household_clean):
+    """October is over when November is prepared: its unspent 800 € without carry-over are free."""
+    h = household_clean
+    _used_october(db, h, carry_over=False)
     plan = _ready(db, h, balance=500.0)
-    assert plan.position == pytest.approx(500.0 - 800.0)   # 800 € of October rent still to pay
+    assert plan.position == pytest.approx(500.0)
+
+
+def test_position_keeps_remaining_while_previous_month_still_runs(db, household_clean):
+    """Simulation of December on 15/11: November is not over, its envelopes can still be spent."""
+    from tests.test_contribution_service import _account, _ccat
+    from app.services.budget_service import get_or_create_budget_month, recalculate_budget_month
+    h = household_clean
+    courses = _ccat(db, h.common, 'Courses', 'fixed_amount', amount=600.0)
+    recalculate_budget_month(get_or_create_budget_month(h.common.id, 2026, 11))
+    _db.session.add(Operation(pot_id=h.common.id, user_id=h.user_a.id, amount=100.0,
+                              date=date(2026, 11, 5), label='CB', direction='debit',
+                              bank_label='CB', bank_date=date(2026, 11, 5), bank_reference='N1',
+                              classification='category', category_id=courses.id))
+    _db.session.commit()
+    _account(db, h.common, 1000.0)
+    assert cs.measure_position(h.common, 2026, 12, date(2026, 11, 15)) == pytest.approx(1000.0 - 500.0)
+
+
+def test_position_follows_carry_in_frozen_in_the_month(db, household_clean):
+    """Carry switched off after November's envelope took its carry-in: still reserved (no double count)."""
+    from app.services.budget_service import get_or_create_budget_month, recalculate_budget_month
+    h = household_clean
+    _used_october(db, h, carry_over=True)
+    recalculate_budget_month(get_or_create_budget_month(h.common.id, 2026, 11))   # carry_in 800
+    Category.query.filter_by(pot_id=h.common.id, name='Loyer').one().carry_over = False
+    _db.session.commit()
+    plan = _ready(db, h, balance=500.0)
+    assert plan.position == pytest.approx(500.0 - 800.0)
+
+
+def test_position_keeps_pending_direct_debit_of_a_used_previous_month(db, household_clean):
+    """A direct debit (fixed_auto) of October not fully passed will still come: kept reserved."""
+    h = household_clean
+    _used_october(db, h, carry_over=False)
+    Category.query.filter_by(pot_id=h.common.id, name='Loyer').one().type = 'fixed_auto'
+    _db.session.commit()
+    plan = _ready(db, h, balance=500.0)
+    assert plan.position == pytest.approx(500.0 - 800.0)
+
+
+def test_position_keeps_carried_remaining_of_a_used_previous_month(db, household_clean):
+    """With carry-over the 800 € roll into November's envelope (carry-ins are out of the need)."""
+    h = household_clean
+    _used_october(db, h, carry_over=True)
+    plan = _ready(db, h, balance=500.0)
+    assert plan.position == pytest.approx(500.0 - 800.0)
 
 
 # --- a member's extra transfer lowers what the others still owe ----------------------------------
