@@ -408,7 +408,7 @@ def test_refloat_transfer_rows_migrated_label(db, household_clean):
 
 def test_position_counts_previous_month_due(db, household_clean):
     h = household_clean
-    _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=2400.0)
+    _ccat(db, h.common, 'Loyer', 'fixed_auto', amount=2400.0)   # direct debit still to come
     oct_ = (2026, 10)
     _salary(db, h.personal_a, 3000.0, oct_)
     _salary(db, h.personal_b, 2000.0, oct_)
@@ -689,7 +689,7 @@ def test_salary_classified_recalculates_existing_draft(db, household_clean):
 # --- residual fix: late previous-month contribution ----------------------------------------------
 
 def _prev_month_setup(db, h, j6=True):
-    _ccat(db, h.common, 'Loyer', 'fixed_amount', amount=2400.0)
+    _ccat(db, h.common, 'Loyer', 'fixed_auto', amount=2400.0)   # direct debit still to come
     oct_ = (2026, 10)
     _salary(db, h.personal_a, 3000.0, oct_)
     _salary(db, h.personal_b, 2000.0, oct_)

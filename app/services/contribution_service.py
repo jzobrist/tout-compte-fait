@@ -338,6 +338,15 @@ def measure_position(common, year, month, today):
         # M-1 was never used (no plan, nothing classified: first month of the household, created on
         # the fly when preparing the plan): its envelopes will never be spent, they are no deficit
         position += fm.remaining
+    else:
+        # M-1 is over when M is prepared: what its envelopes without carry-over did not spend is
+        # free again (carried remainders roll into M's envelopes, carry-ins are out of the need).
+        # A direct debit (fixed_auto) not passed yet will still come: it stays reserved.
+        from app.models import Category
+        from app.services.balance_service import category_remaining
+        position += sum(category_remaining(prev_bm, c) for c in Category.query.filter(
+            Category.pot_id == common.id, Category.carry_over.is_(False),
+            Category.type != 'fixed_auto'))
     # the balance already holds the flows of month M (rent, incomes, contributions) when it has started
     return position - _month_flows_in_balance(common, year, month)
 
