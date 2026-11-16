@@ -117,7 +117,7 @@ def test_edit_form_offers_pot_choice(household_ab):
 # 5. brand
 def test_brand_is_tout_compte_fait(household_ab):
     html = household_ab.client_a.get('/').get_data(as_text=True)
-    assert 'Tout Compte Fait</a>' in html and 'Compta<' not in html
+    assert 'Tout Compte Fait</span></a>' in html and 'Compta<' not in html
 
 
 def test_cannot_move_joint_account_linked_by_other_member_to_personal(household_ab):
