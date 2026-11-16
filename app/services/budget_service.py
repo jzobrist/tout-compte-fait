@@ -61,7 +61,13 @@ def fixed_brut(category, budget_month):
         share = contribution_for(pot, budget_month.year, budget_month.month)
         if share is not None:
             return share
-    return category.amount or 0.0
+    return fixed_amount_for(category, budget_month.year, budget_month.month)
+
+
+def fixed_amount_for(category, year, month):
+    """Amount of a fixed charge for budget month (year, month): 0 outside its period."""
+    from app.services.category_service import active_in
+    return (category.amount or 0.0) if active_in(category, year, month) else 0.0
 
 
 def pot_disponible(budget_month, categories=None):

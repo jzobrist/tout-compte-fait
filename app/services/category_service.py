@@ -14,6 +14,15 @@ class CategoryError(Exception):
 _SETTING_KEYS = ('amount', 'percentage', 'min_amount', 'max_amount', 'carry_over')
 
 
+def active_in(category, year, month):
+    """True when no bound of the charge's period excludes budget month (year, month)."""
+    ym = (year, month)
+    start, end = category.active_from, category.active_until
+    if start is not None and ym < (start.year, start.month):
+        return False
+    return end is None or ym <= (end.year, end.month)
+
+
 def _ensure_family(category):
     """Give a row with a NULL family_id (inserted outside the ORM hook) its own family before others join it."""
     if category.family_id is None and category.id is not None:
