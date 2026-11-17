@@ -48,6 +48,14 @@ def _plan(db, pot, deficit, months=1, split=0.5, year=2026, month=11):
     return plan
 
 
+def _common_plan(db, h, year=2026, month=11):
+    """The common plan of the month: a personal pot of a 2-member household waits for it."""
+    from app.models import ContributionPlan
+    db.session.add(ContributionPlan(pot_id=h.common.id, year=year, month=month, position=0.0,
+                                    created_at=datetime(2026, 11, 1)))
+    db.session.commit()
+
+
 def _base(bm, cat):
     return BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).one().base_allocated
 
@@ -61,6 +69,7 @@ def _spend(db, h, pot, cat, amount, ref='R'):
 
 def test_ensure_plan_measures_deficit_from_free_money(db, household_clean):
     h = household_clean
+    _common_plan(db, h)
     _account(db, h.personal_a, 100.0)
     _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
     bm = _bm(h.personal_a, 1000.0)
@@ -84,6 +93,7 @@ def test_ensure_plan_waits_for_income_and_fresh_balance(db, household_clean):
 
 def test_deficit_frozen_after_close(db, household_clean):
     h = household_clean
+    _common_plan(db, h)
     _account(db, h.personal_a, 100.0)
     rent = _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
     bm = _bm(h.personal_a, 1000.0)
@@ -94,6 +104,7 @@ def test_deficit_frozen_after_close(db, household_clean):
 
 def test_plan_defaults_from_previous_month(db, household_clean):
     h = household_clean
+    _common_plan(db, h)
     _account(db, h.personal_a, 100.0)
     _plan(db, h.personal_a, 100.0, months=3, split=0.7, month=10)
     bm = _bm(h.personal_a, 1000.0)
@@ -195,3 +206,35 @@ def test_envelope_part_common_uses_split_only(db, household_clean):
     assert rs.envelope_part(common_plan) == pytest.approx(225.0)
     personal_plan = _plan(db, h.personal_a, 600.0, months=2)
     assert rs.envelope_part(personal_plan) == pytest.approx(300.0)
+
+
+def test_personal_plan_waits_for_the_common_plan_of_the_month(db, household_clean):
+    """Without the common plan the transfer to the common pot is unknown: no measure yet."""
+    h = household_clean
+    _account(db, h.personal_a, 100.0)
+    _cat(db, h.personal_a, 'Loyer', type_='fixed_amount', amount=600.0)
+    bm = _bm(h.personal_a, 1000.0)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY) is None
+    assert RefloatPlan.query.count() == 0
+    _common_plan(db, h)
+    assert rs.ensure_plan(h.personal_a, bm, TODAY).deficit == pytest.approx(500.0)
+
+
+def test_personal_plan_measures_the_planned_transfer(db, household_clean):
+    """The deficit counts the transfer the common plan asks for, not the category's base amount."""
+    from app.models import Category
+    from tests.test_advance import _ref
+    from tests.test_contribution_service import _account as _c_account
+    h = household_clean
+    Category.query.filter_by(pot_id=h.personal_a.id, role='common_transfer').delete()
+    db.session.add(Category(name='Virement vers le commun', type='fixed_amount', amount=0.0,
+                            pot_id=h.personal_a.id, role='common_transfer', carry_over=False))
+    db.session.commit()
+    _ref(db, h)                                  # November: A transfers 1100 + pays the Prêt 800
+    _c_account(db, h.personal_a, 600.0)
+    bm = get_or_create_budget_month(h.personal_a.id, 2026, 11)
+    plan = rs.ensure_plan(h.personal_a, bm, TODAY)
+    fm = free_money(h.personal_a, bm)
+    assert fm.remaining >= 1100.0 + 800.0                   # planned transfer reserved, not 0 €
+    assert plan.deficit == pytest.approx(max(0.0, -fm.value))
+    assert plan.deficit > 0

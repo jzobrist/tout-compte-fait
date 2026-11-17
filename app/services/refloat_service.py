@@ -62,13 +62,23 @@ def _measurable(pot, bm):
     return balance.as_of.date() >= budget_month_start(pot, bm.year, bm.month)
 
 
+def _waits_for_common_plan(pot, bm):
+    """A personal pot of a household sharing a common pot waits for that month's common plan: until
+    then its transfer to the common pot is unknown and the deficit would be measured without it."""
+    from app.services import contribution_service as cs
+    common = cs._common_of(pot)
+    if common is None or len(cs._members(common)) < 2:
+        return False
+    return cs.get_plan(common, bm.year, bm.month) is None
+
+
 def ensure_plan(pot, bm, today):
     """Plan of this budget month, created (deficit measured and frozen) when measurable."""
     from app.services.balance_service import free_money
     plan = get_plan(pot, bm.year, bm.month)
     if plan is not None or pot.kind == 'common':   # common: created with its J6 plan only
         return plan
-    if not _measurable(pot, bm):
+    if not _measurable(pot, bm) or _waits_for_common_plan(pot, bm):
         return None
     recalculate_budget_month(bm)
     fm = free_money(pot, bm)
