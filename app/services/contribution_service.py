@@ -347,9 +347,12 @@ def _unspent_freed(common, prev_bm, year, month):
     return freed
 
 
-def measure_position(common, year, month, today):
+def measure_position(common, year, month, today, count_expected=False):
     """Common free money at the end of M-1 minus the flows of M already in the balance.
 
+    The transfers M-1's plan still expects are left out: once M is prepared, what a member did not
+    transfer is no receivable carried over as a debt, the shortfall is the household's. The
+    simulation (`count_expected=True`) runs while M-1 is still open and keeps them.
     None when the common balance is unknown or stale, or the budget month M-1 does not exist.
     Never creates anything.
     """
@@ -365,6 +368,8 @@ def measure_position(common, year, month, today):
     position = fm.value
     if position is None:
         return None
+    if not count_expected:
+        position -= fm.transfer_expected
     if get_plan(common, prev_year, prev_month) is None and not _month_used(common, prev_year, prev_month):
         # M-1 was never used (no plan, nothing classified: first month of the household, created on
         # the fly when preparing the plan): its envelopes will never be spent, they are no deficit

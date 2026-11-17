@@ -260,3 +260,29 @@ def test_transfer_gauge_targets_paid_plus_due(db, household_clean):
     m = compute_daily_metrics(bm, cat, 15, 30, 300.0)        # A already sent 300
     assert m['effective'] == pytest.approx(300.0 + 500.0 + 800.0)   # paid + due + Prêt to debit
     assert m['effective'] - m['spent'] == pytest.approx(m['balance'])
+
+
+# --- an unpaid transfer of the previous plan is no receivable for the next one -----------------
+
+def test_next_position_ignores_unpaid_transfers_of_previous_plan(db, household_clean):
+    h = household_clean
+    _ref(db, h)                                              # November: transfers A 1100, B 900
+    _contribution(h, h.user_b, 900.0, date(2026, 11, 16))    # B paid, A did not
+    real = cs.measure_position(h.common, 2026, 12, TODAY)
+    forecast = cs.measure_position(h.common, 2026, 12, TODAY, count_expected=True)
+    assert forecast - real == pytest.approx(1100.0)          # A's unpaid 1100 € is not counted
+
+
+def test_simulation_still_expects_the_running_month_transfers(db, household_clean, monkeypatch):
+    from app.services import simulation_service
+    seen = {}
+    real = cs.measure_position
+
+    def spy(*a, **k):
+        seen.update(k)
+        return real(*a, **k)
+    monkeypatch.setattr(cs, 'measure_position', spy)
+    h = household_clean
+    _ref(db, h)
+    simulation_service.simulate(h.common, h.user_a, TODAY)
+    assert seen.get('count_expected') is True

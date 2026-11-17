@@ -77,7 +77,7 @@ def simulate(common, user, today):
     if cs.get_plan(common, year, month) is not None:
         return None
     label = f'{MONTHS_FR[month - 1]} {year}'
-    position = cs.measure_position(common, year, month, today)
+    position = cs.measure_position(common, year, month, today, count_expected=True)
     if position is None:
         return Simulation(year, month, label, {}, False, 0.0, UNKNOWN_BALANCE)
 

@@ -406,7 +406,7 @@ def test_refloat_transfer_rows_migrated_label(db, household_clean):
     assert 'Contribution' in html
 
 
-def test_position_counts_previous_month_due(db, household_clean):
+def test_position_ignores_previous_month_unpaid_due(db, household_clean):
     h = household_clean
     _ccat(db, h.common, 'Loyer', 'fixed_auto', amount=2400.0)   # direct debit still to come
     oct_ = (2026, 10)
@@ -425,8 +425,10 @@ def test_position_counts_previous_month_due(db, household_clean):
     _salary(db, h.personal_b, 2000.0)
     plan = cs.prepare_if_ready(h.common, TODAY)
     assert plan.month == 11
-    assert plan.position == pytest.approx(bs.free_money(h.common, obm).value)
-    assert plan.position == pytest.approx(2400.0 - 2400.0 + 700.0)
+    # the 700 € A never transferred for October is no receivable carried into November
+    fm = bs.free_money(h.common, obm)
+    assert plan.position == pytest.approx(fm.value - fm.transfer_expected)
+    assert plan.position == pytest.approx(2400.0 - 2400.0)
 
 
 # --- Task 4: validation workflow ----------------------------------------------------------------
@@ -711,6 +713,8 @@ def test_late_previous_month_contribution_not_double_counted(db, household_clean
     _prev_month_setup(db, h)
     _account(db, h.common, 2400.0)
     shares_before = _oct_shares(h)
+    classify(_credit(db, h, 1700.0, day=date(2026, 10, 12)), h.user_a, 'contribution',
+             contributor=h.user_a)                       # already in the 2400 € balance
     # the 700 due is paid on Nov 2: the balance already includes it
     classify(_credit(db, h, 700.0, day=date(2026, 11, 2)), h.user_a, 'contribution',
              contributor=h.user_a)
@@ -720,7 +724,7 @@ def test_late_previous_month_contribution_not_double_counted(db, household_clean
     _salary(db, h.personal_b, 2000.0)
     plan = cs.prepare_if_ready(h.common, TODAY)
     assert plan.month == 11
-    assert plan.position == pytest.approx(2400.0)
+    assert plan.position == pytest.approx(3100.0 - 2400.0)   # counted once, rent still to come
     assert _oct_shares(h) == shares_before
 
 
