@@ -157,3 +157,14 @@ def test_htmx_fragment_does_not_compute_pending(db, household_clean, nav_today, 
     assert calls == []
     household_clean.client_a.get('/')
     assert calls == [1]                                   # computed once, cached for the page
+
+
+def test_gear_menu_shared_by_desktop_and_mobile(db, household_clean):
+    html = household_clean.client_a.get('/accounts').get_data(as_text=True)
+    bottom = html[html.index('<nav class="bottom-nav">'):]
+    bottom = bottom[:bottom.index('</nav>')]
+    assert bottom.count('bottom-nav-item') == 4                     # Dashboard, Historique | Pointage, ⚙️
+    assert 'bottom-nav-fab' in bottom and 'settings-menu' in bottom
+    assert html.count('class="dropdown-menu dropdown-menu-end settings-menu"') == 2
+    assert html.count('>Comptes</a>') == 2                           # only in the two ⚙️ menus
+    assert 'id="theme-toggle"' not in html and html.count('dropdown-item theme-toggle') == 2

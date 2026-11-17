@@ -41,6 +41,17 @@
         {% endfor %}
     </div>
 {% endmacro %}
+{% macro settings_menu(ep) %}
+    <ul class="dropdown-menu dropdown-menu-end settings-menu">
+        <li><a class="dropdown-item{{ ' active' if ep.startswith('accounts') else '' }}" href="{{ url_for('accounts.index') }}">Comptes</a></li>
+        <li><a class="dropdown-item{{ ' active' if ep.startswith('plan') else '' }}" href="{{ url_for('plan.index') }}">Plan du mois</a></li>
+        <li><a class="dropdown-item{{ ' active' if ep.startswith('incomes') else '' }}" href="{{ url_for('incomes.index') }}">Revenus</a></li>
+        <li><a class="dropdown-item{{ ' active' if ep.startswith('settings') else '' }}" href="{{ url_for('settings.index') }}">Paramètres</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><button class="dropdown-item theme-toggle" type="button">🌙 Thème sombre</button></li>
+        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Déconnexion</a></li>
+    </ul>
+{% endmacro %}
 {% macro nav_link(endpoint, label, active) %}
     <a class="nav-link{{ ' active' if active else '' }}" href="{{ url_for(endpoint) }}"{% if active %} aria-current="page"{% endif %}>{{ label }}</a>
 {% endmacro %}
@@ -55,21 +66,13 @@
                 {{ nav_link('dashboard.index', 'Tableau de bord', ep.startswith('dashboard')) }}
                 {{ nav_link('operations.pointage', 'Pointage', ep == 'operations.pointage') }}
                 {{ nav_link('history.index', 'Historique', ep.startswith('history')) }}
-                {{ nav_link('accounts.index', 'Comptes', ep.startswith('accounts')) }}
                 {% if plan_pending() %}
                 <a class="btn btn-sm btn-danger text-nowrap" href="{{ url_for('plan.index') }}">Plan à valider</a>
                 {% endif %}
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
-                            data-bs-toggle="dropdown" aria-expanded="false" title="Menu">⚙️</button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item{{ ' active' if ep.startswith('plan') else '' }}" href="{{ url_for('plan.index') }}">Plan du mois</a></li>
-                        <li><a class="dropdown-item{{ ' active' if ep.startswith('incomes') else '' }}" href="{{ url_for('incomes.index') }}">Revenus</a></li>
-                        <li><a class="dropdown-item{{ ' active' if ep.startswith('settings') else '' }}" href="{{ url_for('settings.index') }}">Paramètres</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><button class="dropdown-item" type="button" id="theme-toggle">🌙 Thème sombre</button></li>
-                        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Déconnexion</a></li>
-                    </ul>
+                            data-bs-toggle="dropdown" aria-expanded="false" title="Menu" aria-label="Menu">⚙️</button>
+                    {{ settings_menu(ep) }}
                 </div>
             </div>
         </div>
@@ -135,21 +138,20 @@
                     data-bs-target="#operationModal"
                     title="Pointer une dépense">+</button>
         </div>
-        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('accounts') else '' }}"
-           href="{{ url_for('accounts.index') }}">
-            <span class="nav-icon">🏦</span>
-            <span>Comptes</span>
-        </a>
         <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('operations') and request.endpoint == 'operations.pointage' else '' }}"
            href="{{ url_for('operations.pointage') }}">
             <span class="nav-icon">✅</span>
             <span>Pointage</span>
         </a>
-        <a class="bottom-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('settings') else '' }}"
-           href="{{ url_for('settings.index') }}">
-            <span class="nav-icon">⚙️</span>
-            <span>Paramètres</span>
-        </a>
+        {% set menu_active = ep.startswith('accounts') or ep.startswith('plan') or ep.startswith('incomes') or ep.startswith('settings') %}
+        <div class="dropup bottom-nav-menu">
+            <button class="bottom-nav-item w-100{{ ' active' if menu_active else '' }}" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menu">
+                <span class="nav-icon">⚙️</span>
+                <span>Menu</span>
+            </button>
+            {{ settings_menu(ep) }}
+        </div>
     </nav>
 
     <!-- Operation modal (bottom sheet on mobile) -->
@@ -180,18 +182,21 @@
     <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
     <script>
-      // Dark mode toggle (desktop button in navbar)
+      // Dark mode toggle (⚙️ menu, desktop and mobile)
       const html = document.documentElement;
+      const toggles = document.querySelectorAll('.theme-toggle');
       function applyThemeIcon() {
-        const t = document.getElementById('theme-toggle');
-        if (t) t.textContent = html.classList.contains('dark') ? '☀️ Thème clair' : '🌙 Thème sombre';
+        toggles.forEach(function(t) {
+          t.textContent = html.classList.contains('dark') ? '☀️ Thème clair' : '🌙 Thème sombre';
+        });
       }
       applyThemeIcon();
-      const toggle = document.getElementById('theme-toggle');
-      if (toggle) toggle.addEventListener('click', function() {
-        html.classList.toggle('dark');
-        localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
-        applyThemeIcon();
+      toggles.forEach(function(t) {
+        t.addEventListener('click', function() {
+          html.classList.toggle('dark');
+          localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+          applyThemeIcon();
+        });
       });
     </script>
     <div id="htmx-error" class="alert alert-danger shadow d-none" role="alert"
