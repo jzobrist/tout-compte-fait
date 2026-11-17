@@ -241,3 +241,22 @@ def test_dashboard_transfer_category_shows_the_real_due(db, household_clean):
     m = compute_daily_metrics(bm, cat, 15, 30, get_spent_for_category(bm, cat))
     assert m['balance'] == pytest.approx(500.0 + 800.0)       # due + Prêt not yet debited
     assert m['remaining_daily'] == pytest.approx(1300.0 / 15)
+
+
+def test_transfer_gauge_targets_paid_plus_due(db, household_clean):
+    """The gauge aims at what was transferred + what is still due, not the plan's raw transfer."""
+    from app.models import Category
+    from app.services.budget_service import compute_daily_metrics, get_or_create_budget_month
+    h = household_clean
+    _ref(db, h)                                              # transfers A 1100, B 900
+    _contribution(h, h.user_b, 1500.0, date(2026, 11, 16))   # B's 600 extra lower A's due to 500
+    cat = Category.query.filter_by(pot_id=h.personal_a.id, role='common_transfer').first()
+    if cat is None:
+        cat = Category(name='Virement vers le commun', type='fixed_amount', amount=1100.0,
+                       pot_id=h.personal_a.id, role='common_transfer', carry_over=False)
+        _db.session.add(cat)
+        _db.session.commit()
+    bm = get_or_create_budget_month(h.personal_a.id, *M)
+    m = compute_daily_metrics(bm, cat, 15, 30, 300.0)        # A already sent 300
+    assert m['effective'] == pytest.approx(300.0 + 500.0 + 800.0)   # paid + due + Prêt to debit
+    assert m['effective'] - m['spent'] == pytest.approx(m['balance'])

@@ -286,6 +286,10 @@ def compute_daily_metrics(budget_month, category, current_day, days_in_month, sp
             owner = db.session.get(User, pot.owner_id)
             balance = due + cs.advance_pending(cs._common_of(pot), owner,
                                                budget_month.year, budget_month.month)
+            # gauge target = already transferred + still owed (others' extra transfers lower it)
+            effective = spent + balance
+            ideal_daily = effective / days_in_month if days_in_month > 0 else 0.0
+            ideal_cumulated = effective * current_day / days_in_month if days_in_month > 0 else 0.0
     remaining_daily = max(0.0, balance / days_remaining)
     return {
         'effective': effective,
