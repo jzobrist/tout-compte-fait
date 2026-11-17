@@ -60,7 +60,7 @@
     <!-- Desktop navbar (hidden on mobile via CSS) -->
     <nav class="navbar navbar-expand-lg main-navbar">
         <div class="container flex-nowrap">
-            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}" title="Tout Compte Fait">💰<span class="d-none d-xl-inline"> Tout Compte Fait</span></a>
+            <a class="navbar-brand fw-bold" href="{{ url_for('dashboard.index') }}" title="Tout Compte Fait"><img src="{{ url_for('static', filename='icons/icon.svg') }}" alt="" class="brand-icon"><span class="d-none d-xl-inline"> Tout Compte Fait</span></a>
             {{ pot_switcher() }}
             <div class="navbar-nav ms-auto d-flex flex-row gap-3 align-items-center">
                 {{ nav_link('dashboard.index', 'Tableau de bord', ep.startswith('dashboard')) }}

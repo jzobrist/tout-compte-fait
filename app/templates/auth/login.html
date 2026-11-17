@@ -2,7 +2,7 @@
 {% block title %}Connexion — Tout Compte Fait{% endblock %}
 {% block content %}
 <div class="auth-card">
-  <div class="auth-title">💰 Connexion</div>
+  <div class="auth-title"><img src="{{ url_for('static', filename='icons/icon.svg') }}" alt="" class="brand-icon"> Connexion</div>
   <form method="post">
     {{ form.hidden_tag() }}
     <div class="mb-3">
