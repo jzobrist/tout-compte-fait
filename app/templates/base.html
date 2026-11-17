@@ -46,6 +46,7 @@
         <li><a class="dropdown-item{{ ' active' if ep.startswith('accounts') else '' }}" href="{{ url_for('accounts.index') }}">Comptes</a></li>
         <li><a class="dropdown-item{{ ' active' if ep.startswith('plan') else '' }}" href="{{ url_for('plan.index') }}">Plan du mois</a></li>
         <li><a class="dropdown-item{{ ' active' if ep.startswith('incomes') else '' }}" href="{{ url_for('incomes.index') }}">Revenus</a></li>
+        <li><a class="dropdown-item{{ ' active' if ep.startswith('categories') else '' }}" href="{{ url_for('categories.index') }}">Catégories</a></li>
         <li><a class="dropdown-item{{ ' active' if ep.startswith('settings') else '' }}" href="{{ url_for('settings.index') }}">Paramètres</a></li>
         <li><hr class="dropdown-divider"></li>
         <li><button class="dropdown-item theme-toggle" type="button">🌙 Thème sombre</button></li>

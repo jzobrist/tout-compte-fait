@@ -65,7 +65,7 @@ app/
 - All family logic lives in `category_service`: `create_category`, `update_family`, `rename_family`, `change_scope`, `change_type`, `delete_family`, `families_for`. `display_name` = Jinja global `category_label`, adding " (Commun)" / " (Perso)".
 - Name uniqueness (case-insensitive) is checked per pot, only in pots the actor can access (`check_name_free`). A same-name category in another member's pot is absorbed into the shared family, never an error (that would reveal it).
 - Safe deletion (`delete_exemplars`): bank movements go back to « À classer » in their bank account's pot (classification and category cleared); pending manual entries are deleted; `BudgetAdjustment`s removed; `AlertLog.category_id` nulled. `Category.operations` no longer cascades. Other members whose exemplar was deleted get a one-shot `CategoryNotice` banner. The `common_transfer` family is locked (no rename, type, scope or delete).
-- Categories page is reached from Paramètres (no navbar entry). One-off dev script: `scripts/dev_categories_scope.py`.
+- Categories page is reached from the ⚙️ settings menu (`settings_menu` macro, desktop + mobile; no navbar entry, no Paramètres card). One-off dev script: `scripts/dev_categories_scope.py`.
 
 ### Operations, pointage & reconciliation
 

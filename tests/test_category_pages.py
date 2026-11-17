@@ -4,12 +4,12 @@ from app.models import Category, CategoryNotice, Operation
 from tests.test_category_delete import _account, _bank_op, _cat, _pending, _shared
 
 
-def test_nav_has_no_categories_link(household_ab):
+def test_categories_link_in_settings_menu(household_ab):
     h = household_ab
     html = h.client_a.get('/').get_data(as_text=True)
     assert 'nav-link" href="/categories"' not in html
-    assert '🏷️' not in html
-    assert 'href="/categories"' in h.client_a.get('/settings').get_data(as_text=True)
+    assert 'dropdown-item" href="/categories">Catégories</a>' in html
+    assert '🏷️ Catégories' not in h.client_a.get('/settings').get_data(as_text=True)
 
 
 def test_list_shows_badges_once_per_family(db, household_ab):
