@@ -21,7 +21,7 @@ def test_create_dynamic_category(auth_client, db):
         'name': 'Hobbies',
         'type': 'dynamic',
         'common': 'y',
-        'common-percentage': '0.08',
+        'common-percentage': '8',
         'common-min_amount': '40',
         'common-carry_over': 'y',
     }, follow_redirects=True)
@@ -78,3 +78,23 @@ def test_spending_on_zero_budget_shows_full_danger_gauge(db, household_ab):
     db.session.commit()
     html = h.client_a.get('/').get_data(as_text=True)
     assert 'cat-progress-bar danger" style="width: 100%;"' in html
+
+
+def test_percentage_is_typed_in_percent(auth_client, db):
+    from app.models import Category
+    auth_client.post('/categories', data={
+        'name': 'Sorties', 'type': 'dynamic', 'common': 'y',
+        'common-percentage': '12,5', 'common-min_amount': '30'})
+    cat = Category.query.filter_by(name='Sorties').one()
+    assert abs(cat.percentage - 0.125) < 1e-9
+    html = auth_client.get(f'/categories/{cat.id}/edit').get_data(as_text=True)
+    assert 'name="common-percentage"' in html and 'value="12.5"' in html
+    assert 'value="30"' in html and 'value="30.0"' not in html
+    assert 'Pourcentage du disponible (%)' in html
+
+
+def test_fixed_only_fields_hidden_with_d_none(auth_client, db):
+    """Bootstrap d-flex is !important: the type toggle must use the d-none class, not style.display."""
+    html = auth_client.get('/categories').get_data(as_text=True)
+    assert "classList.toggle('d-none'" in html
+    assert 'style.display' not in html

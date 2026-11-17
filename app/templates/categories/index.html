@@ -32,7 +32,7 @@
           <td style="color:var(--text-secondary); font-size:.85rem;">
             {% for ex in fam.exemplars %}
             <div>{% if fam.exemplars | length > 1 %}<em>{{ 'Commun' if ex.pot.is_common else 'Perso' }}</em> : {% endif %}
-            {% if ex.type == 'dynamic' %}{{ ((ex.percentage or 0) * 100)|round(1) }}%{% if ex.min_amount %} min {{ ex.min_amount }}€{% endif %}{% if ex.max_amount and ex.max_amount > 0 %} max {{ ex.max_amount }}€{% endif %}
+            {% if ex.type == 'dynamic' %}{{ '%g'|format(((ex.percentage or 0) * 100)|round(1)) }} %{% if ex.min_amount %} min {{ '%g'|format(ex.min_amount) }} €{% endif %}{% if ex.max_amount and ex.max_amount > 0 %} max {{ '%g'|format(ex.max_amount) }} €{% endif %}
             {% elif ex.amount %}{{ ex.amount }}€/mois{% else %}—{% endif %}</div>
             {% endfor %}
           </td>

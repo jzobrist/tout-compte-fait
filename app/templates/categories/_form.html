@@ -18,7 +18,7 @@
     <div class="col-md-3 f-fixed">{{ sform.active_from.label(class="form-label") }}{{ sform.active_from(class="form-control{{ ' is-invalid' if sform.active_from.errors }}", placeholder="AAAA-MM") }}{% if sform.active_from.errors %}<div class="invalid-feedback">Format attendu : AAAA-MM (ex. 2026-12)</div>{% endif %}</div>
     <div class="col-md-3 f-fixed">{{ sform.active_until.label(class="form-label") }}{{ sform.active_until(class="form-control{{ ' is-invalid' if sform.active_until.errors }}", placeholder="AAAA-MM") }}{% if sform.active_until.errors %}<div class="invalid-feedback">Format attendu : AAAA-MM (ex. 2026-12)</div>{% endif %}</div>
     <div class="col-md-3 f-fixed d-flex align-items-end small text-secondary">Mois budgétaire du premier / dernier prélèvement. Nouveau prêt : créez une nouvelle catégorie.</div>
-    <div class="col-md-3 f-dyn">{{ sform.percentage.label(class="form-label") }}{{ sform.percentage(class="form-control") }}</div>
+    <div class="col-md-3 f-dyn">{{ sform.percentage.label(class="form-label") }}<div class="input-group">{{ sform.percentage(class="form-control", inputmode="decimal", placeholder="ex. 15") }}<span class="input-group-text">%</span></div></div>
     <div class="col-md-3 f-dyn">{{ sform.min_amount.label(class="form-label") }}{{ sform.min_amount(class="form-control") }}</div>
     <div class="col-md-3 f-dyn">{{ sform.max_amount.label(class="form-label") }}{{ sform.max_amount(class="form-control") }}</div>
     <div class="col-md-4 d-flex align-items-end">
@@ -53,8 +53,9 @@
   const typeSel = document.getElementById('cat-type');
   function toggle() {
     const fixed = typeSel.value === 'fixed_auto' || typeSel.value === 'fixed_amount';
-    document.querySelectorAll('#category-form .f-fixed').forEach(function(e) { e.style.display = fixed ? '' : 'none'; });
-    document.querySelectorAll('#category-form .f-dyn').forEach(function(e) { e.style.display = fixed ? 'none' : ''; });
+    // d-none class (not an inline display): Bootstrap's d-flex is !important and would win.
+    document.querySelectorAll('#category-form .f-fixed').forEach(function(e) { e.classList.toggle('d-none', !fixed); });
+    document.querySelectorAll('#category-form .f-dyn').forEach(function(e) { e.classList.toggle('d-none', fixed); });
   }
   typeSel.addEventListener('change', toggle);
   toggle();

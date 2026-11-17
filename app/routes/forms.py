@@ -4,6 +4,38 @@ from wtforms import HiddenField, StringField, PasswordField, FloatField, SelectF
 from wtforms.validators import InputRequired, DataRequired, Email, Length, Optional, NumberRange
 import datetime
 
+
+def _plain_number(value):
+    """30.0 -> '30', 12.5 -> '12.5' (no float noise)."""
+    value = round(value, 4)
+    return str(int(value)) if value == int(value) else repr(value)
+
+
+class DecimalCommaField(FloatField):
+    """FloatField accepting a French decimal comma and showing whole numbers without '.0'."""
+
+    def process_formdata(self, valuelist):
+        super().process_formdata([v.replace(',', '.').strip() for v in valuelist])
+
+    def _value(self):
+        if self.raw_data:
+            return self.raw_data[0]
+        return '' if self.data is None else _plain_number(self.data)
+
+
+class PercentField(DecimalCommaField):
+    """Typed in percent (12.5), stored as a fraction (0.125)."""
+
+    def process_formdata(self, valuelist):
+        super().process_formdata(valuelist)
+        if self.data is not None:
+            self.data = self.data / 100
+
+    def _value(self):
+        if self.raw_data:
+            return self.raw_data[0]
+        return '' if self.data is None else _plain_number(self.data * 100)
+
 class RegisterForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     display_name = StringField('Nom affiché', validators=[DataRequired(), Length(max=80)])
@@ -44,10 +76,10 @@ class CategoryForm(FlaskForm):
 
 class CategorySettingsForm(FlaskForm):
     """Settings of one exemplar; instantiated with prefix 'common' or 'personal' (fields common-amount…)."""
-    amount = FloatField('Montant mensuel (€)', validators=[Optional()])
-    percentage = FloatField('Pourcentage du disponible (ex: 0.15)', validators=[Optional()])
-    min_amount = FloatField('Plancher min (€)', validators=[Optional()])
-    max_amount = FloatField('Plafond max (€)', validators=[Optional()])
+    amount = DecimalCommaField('Montant mensuel (€)', validators=[Optional()])
+    percentage = PercentField('Pourcentage du disponible (%)', validators=[Optional()])
+    min_amount = DecimalCommaField('Plancher min (€)', validators=[Optional()])
+    max_amount = DecimalCommaField('Plafond max (€)', validators=[Optional()])
     carry_over = BooleanField('Reporter le solde au mois suivant', default=True)
     constrained = BooleanField('Charge contrainte (compte dans le reste à vivre)', default=False)
     provision = BooleanField('Provision (peut recevoir le surplus du commun)', default=False)

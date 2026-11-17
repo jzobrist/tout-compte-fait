@@ -61,7 +61,7 @@ def test_edit_changes_name_type_scope_and_settings(db, household_ab):
     cat = _cat(db, h.common, 'Cadeaux')
     resp = h.client_a.post(f'/categories/{cat.id}/edit', data={
         'name': 'Fêtes', 'type': 'dynamic', 'common': 'y', 'personal': 'shared',
-        'common-percentage': '0.05', 'common-amount': '99'})
+        'common-percentage': '5', 'common-amount': '99'})
     assert resp.status_code == 302
     rows = Category.query.filter_by(name='Fêtes').all()
     assert {r.pot_id for r in rows} == {h.common.id, h.personal_a.id, h.personal_b.id}
@@ -227,7 +227,7 @@ def test_partner_type_change_keeps_hidden_own(db, household_clean):
     h = household_clean
     common, own_id, bank_id, pend_id = _common_plus_hidden_own(db, h)
     resp = h.client_b.post(f'/categories/{common.id}/edit', data={
-        'name': 'Sport', 'type': 'dynamic', 'common': 'y', 'personal': '', 'common-percentage': '0.1'})
+        'name': 'Sport', 'type': 'dynamic', 'common': 'y', 'personal': '', 'common-percentage': '10'})
     assert resp.status_code == 302
     own = _assert_own_a_untouched(db, h, own_id, bank_id, pend_id)
     assert own.type == 'fixed_amount'

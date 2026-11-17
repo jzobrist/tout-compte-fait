@@ -131,7 +131,7 @@ def test_category_create_sets_pot(household_ab, db):
     h = household_ab
     _use_pot(h.client_a, h.personal_a)
     h.client_a.post('/categories', data={
-        'name': 'Nouvelle', 'type': 'dynamic', 'personal-percentage': '0.1',
+        'name': 'Nouvelle', 'type': 'dynamic', 'personal-percentage': '10',
         'personal-carry_over': 'y', 'personal': 'own'})
     cat = Category.query.filter_by(name='Nouvelle').one()
     assert cat.pot_id == h.personal_a.id

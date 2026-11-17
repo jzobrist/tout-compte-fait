@@ -353,7 +353,7 @@ def test_form_switch_to_dynamic_with_payer_set(db, household_clean):
     _db.session.commit()
     resp = h.client_a.post(f'/categories/{pret.id}/edit', data={
         'name': 'Prêt', 'type': 'dynamic', 'common': 'y', 'personal': '',
-        'common-percentage': '0.1', 'common-paid_by': str(h.user_a.id)})
+        'common-percentage': '10', 'common-paid_by': str(h.user_a.id)})
     assert resp.status_code == 302
     _db.session.refresh(pret)
     assert pret.type == 'dynamic' and pret.paid_by_user_id is None

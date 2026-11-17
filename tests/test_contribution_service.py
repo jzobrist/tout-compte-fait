@@ -69,7 +69,7 @@ def test_category_form_constrained_stored_for_personal_fixed(household_ab, db):
     c = Category.query.filter_by(name='Prêt2').one()
     assert c.constrained is True and c.provision is False
     h.client_a.post('/categories', data={
-        'name': 'Dyn', 'type': 'dynamic', 'personal': 'own', 'personal-percentage': '0.1',
+        'name': 'Dyn', 'type': 'dynamic', 'personal': 'own', 'personal-percentage': '10',
         'personal-constrained': 'y'})
     assert Category.query.filter_by(name='Dyn').one().constrained is False
 
