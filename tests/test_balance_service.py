@@ -158,3 +158,16 @@ def test_budget_month_start(db, household_clean):
     pot.income_start_day = 1
     db.session.commit()
     assert budget_month_start(pot, 2026, 12) == date(2026, 12, 1)
+
+
+def test_transfer_to_common_cannot_be_closed_but_can_be_reopened(db, household_clean):
+    h = household_clean
+    cat = _cat(db, h.personal_a, 'Virement vers le commun', role='common_transfer')
+    bm = _bm(h.personal_a)
+    with pytest.raises(EnvelopeError):
+        close_envelope(bm, cat, TODAY)
+    bmc = BudgetMonthCategory.query.filter_by(budget_month_id=bm.id, category_id=cat.id).one()
+    bmc.closed_at = datetime(2026, 11, 14)                   # closed before the button was removed
+    db.session.commit()
+    reopen_envelope(bm, cat, TODAY)
+    assert bmc.closed_at is None

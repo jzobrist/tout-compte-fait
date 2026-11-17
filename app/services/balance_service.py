@@ -123,6 +123,8 @@ def _set_closed(bm, category, today, closed):
     _check_current(bm, today)
     if category.pot_id != bm.pot_id:
         raise EnvelopeError('Enveloppe d\'un autre pot.')
+    if closed and category.role == 'common_transfer':
+        raise EnvelopeError('Le virement vers le commun suit le plan commun : il ne se clôt pas.')
     bmc = _bmc(bm, category)
     if bmc is None:
         bmc = BudgetMonthCategory(budget_month_id=bm.id, category_id=category.id,

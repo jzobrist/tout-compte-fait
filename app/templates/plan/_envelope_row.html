@@ -10,9 +10,11 @@
       {% if cat.paid_by %}<span class="small text-secondary">payé par {{ cat.paid_by.display_name }}</span>{% endif %}
       <div>{% with oob=false %}{% include 'plan/_env_fig.html' %}{% endwith %}</div>
     </div>
+    {% if row.closed or cat.role != 'common_transfer' %}
     <button class="btn btn-sm btn-outline-secondary"
             hx-post="{{ url_for('plan.' ~ ('reopen' if row.closed else 'close'), pot_id=pot.id, category_id=cat.id) }}"
             hx-target="#envelopes-{{ pot.id }}" hx-swap="outerHTML">{{ 'Rouvrir' if row.closed else 'Clore' }}</button>
+    {% endif %}
   </div>
   {% if row.slider %}
   {% set url = url_for('plan.ceiling', pot_id=pot.id, category_id=cat.id) %}

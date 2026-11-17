@@ -18,7 +18,7 @@
               hx-post="{{ url_for('dashboard.reopen_category', cat_id=item.category.id) }}"
               hx-target="#category-list" hx-swap="innerHTML"
               title="Rouvrir">↺</button>
-      {% else %}
+      {% elif item.category.role != 'common_transfer' %}{# what is due comes from the common plan #}
       <button class="btn-adjust"
               hx-post="{{ url_for('dashboard.close_category', cat_id=item.category.id) }}"
               hx-target="#category-list" hx-swap="innerHTML"
