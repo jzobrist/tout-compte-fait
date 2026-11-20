@@ -57,7 +57,7 @@
     {% set level, count, pulse = badge %}
     <div class="dropdown nav-alerts">
         <button class="btn btn-sm btn-{{ level }} position-relative{{ ' alert-pulse' if pulse else '' }}" type="button"
-                data-bs-toggle="dropdown" aria-expanded="false" title="Alertes" aria-label="{{ count }} alerte{{ 's' if count > 1 else '' }}">⚠️ <span class="nav-alerts-count">{{ count }}</span></button>
+                data-bs-toggle="dropdown" aria-expanded="false" title="Alertes" aria-label="{{ count }} alerte{{ 's' if count > 1 else '' }}">🔔 <span class="nav-alerts-count">{{ count }}</span></button>
         <ul class="dropdown-menu dropdown-menu-end nav-alerts-menu">
             {% for a in items %}
             <li><a class="dropdown-item nav-alert nav-alert-{{ a.level }}" href="{{ url_for(a.link[0], **a.link[1]) }}">
