@@ -131,6 +131,30 @@ def create_app(config_name=None):
             return g._plan_pending
         return {'plan_pending': plan_pending}
 
+    @app.context_processor
+    def inject_nav_alerts():
+        from flask import g
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return {}
+
+        def nav_alerts():
+            """(items, (level, count, pulse)) of the navbar alert menu for the current pot,
+            computed once per page, lazily; a failure never breaks the page."""
+            if '_nav_alerts' not in g:
+                from datetime import date
+                from .services import alert_service
+                from .services.access_service import get_current_pot
+                try:
+                    pot = get_current_pot()
+                    items = alert_service.nav_alerts(pot, date.today()) if pot else []
+                except Exception:
+                    app.logger.exception('Navbar alerts failed')
+                    items = []
+                g._nav_alerts = (items, alert_service.nav_badge(items))
+            return g._nav_alerts
+        return {'nav_alerts': nav_alerts}
+
     @app.template_global()
     def category_label(category):
         from .services.category_service import display_name

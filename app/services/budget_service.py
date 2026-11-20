@@ -27,6 +27,18 @@ def budget_month_start(pot, year, month):
     return date(year, month, 1)
 
 
+def budget_day(pot, year, month, today):
+    """(day reached, length) of budget month (year, month) of `pot` on `today`: day 1 = its first
+    day (`budget_month_start`), length = days until the next one starts. Past month: (length,
+    length); not started yet: (0, length)."""
+    start = budget_month_start(pot, year, month)
+    end = budget_month_start(pot, *((year + 1, 1) if month == 12 else (year, month + 1)))
+    length = (end - start).days
+    if today < start:
+        return 0, length
+    return min((today - start).days + 1, length), length
+
+
 def current_budget_month(pot, today):
     """BudgetMonth of `pot` that `today` belongs to."""
     year, month = target_budget_month(today, pot.income_start_day or 1)

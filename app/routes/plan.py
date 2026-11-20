@@ -107,7 +107,7 @@ def index():
     year, month = _month_or_400(common, request.args)
     cv = refloat_service.build_view(common, date.today(), year, month, current_user)
     pv = refloat_service.build_view(mine, date.today(), cv['year'], cv['month'], current_user)
-    return render_template('plan/index.html', balance_alerts=cv['balance_alerts'],
+    return render_template('plan/index.html',
                            my_contribution=pv['my_contribution'],
                            common_html=render_template('plan/_section.html', **cv),
                            personal_html=render_template('plan/_section.html', **pv))

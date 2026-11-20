@@ -53,6 +53,21 @@
         <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Déconnexion</a></li>
     </ul>
 {% endmacro %}
+{% macro alerts_menu(items, badge) %}
+    {% set level, count, pulse = badge %}
+    <div class="dropdown nav-alerts">
+        <button class="btn btn-sm btn-{{ level }} position-relative{{ ' alert-pulse' if pulse else '' }}" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false" title="Alertes" aria-label="{{ count }} alerte{{ 's' if count > 1 else '' }}">⚠️ <span class="nav-alerts-count">{{ count }}</span></button>
+        <ul class="dropdown-menu dropdown-menu-end nav-alerts-menu">
+            {% for a in items %}
+            <li><a class="dropdown-item nav-alert nav-alert-{{ a.level }}" href="{{ url_for(a.link[0], **a.link[1]) }}">
+                <span class="nav-alert-title">{{ a.icon }} {{ a.title }}</span>
+                {% if a.detail %}<span class="nav-alert-detail">{{ a.detail }}</span>{% endif %}
+            </a></li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endmacro %}
 {% macro nav_link(endpoint, label, active) %}
     <a class="nav-link{{ ' active' if active else '' }}" href="{{ url_for(endpoint) }}"{% if active %} aria-current="page"{% endif %}>{{ label }}</a>
 {% endmacro %}
@@ -70,6 +85,8 @@
                 {% if plan_pending() %}
                 <a class="btn btn-sm btn-danger text-nowrap" href="{{ url_for('plan.index') }}">Plan à valider</a>
                 {% endif %}
+                {% set alert_items, alert_badge = nav_alerts() %}
+                {% if alert_badge[1] %}<span id="nav-alerts">{{ alerts_menu(alert_items, alert_badge) }}</span>{% endif %}
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
                             data-bs-toggle="dropdown" aria-expanded="false" title="Menu" aria-label="Menu">⚙️</button>
@@ -78,8 +95,12 @@
             </div>
         </div>
     </nav>
-    <!-- Mobile pot switcher (navbar collapses below 992px) -->
-    <div class="d-lg-none container mt-2">{{ pot_switcher() }}</div>
+    <!-- Mobile pot switcher (navbar collapses below 992px) + alert menu -->
+    <div class="d-lg-none container mt-2 d-flex align-items-center gap-2">
+        <div class="flex-grow-1">{{ pot_switcher() }}</div>
+        {% set alert_items, alert_badge = nav_alerts() %}
+        {% if alert_badge[1] %}<span id="nav-alerts-mobile" class="d-md-none">{{ alerts_menu(alert_items, alert_badge) }}</span>{% endif %}
+    </div>
     {% endif %}
 
     <div class="container mt-4 mb-4">

@@ -9,11 +9,11 @@ from app.extensions import db
 from app.services.access_service import get_current_pot, load_pot_object_or_404
 from app.services.balance_service import free_money
 from app.services.gauge_service import build_gauges
-from app.services.alert_service import MONTHS_FR, MONTHS_FR_ABBR, free_money_alerts
+from app.services.alert_service import MONTHS_FR, MONTHS_FR_ABBR
 from app.services.budget_service import (
     get_or_create_budget_month, recalculate_budget_month,
     get_category_effective_budget, get_spent_for_category, compute_daily_metrics, pot_spent_total,
-    target_budget_month,
+    target_budget_month, budget_day,
 )
 
 dashboard_bp = Blueprint('dashboard', __name__)
@@ -32,8 +32,7 @@ def index():
             raise ValueError
     except (ValueError, TypeError):
         year, month = current_bm_year, current_bm_month
-    days_in_month = calendar.monthrange(year, month)[1]
-    current_day = today.day if (year == today.year and month == today.month) else days_in_month
+    current_day, days_in_month = budget_day(pot, year, month, today)
 
     bm = get_or_create_budget_month(pot.id, year, month)
     from app.services.contribution_service import common_income
@@ -42,19 +41,6 @@ def index():
 
     cat_data = build_gauges(bm, current_day, days_in_month)
 
-    # Alert detection — pace alerts only for dynamic categories
-    alerts = []
-    for item in cat_data:
-        if item['category'].type != 'dynamic':
-            continue
-        m = item['metrics']
-        if m['ideal_cumulated'] > 0:
-            ratio = m['spent'] / m['ideal_cumulated']
-            if ratio > 1.2:
-                alerts.append({'category': item['category'], 'type': 'overspending', 'ratio': ratio})
-            elif ratio < 0.5 and m['spent'] > 0:
-                alerts.append({'category': item['category'], 'type': 'ahead', 'ratio': ratio})
-
     # Build last 6 months chart data
     chart_data = _build_chart_data(pot, year, month, 6)
 
@@ -62,7 +48,9 @@ def index():
     next_month = _next_month(year, month, current_bm_year, current_bm_month)
 
     is_current = (year, month) == (current_bm_year, current_bm_month)
-    balance_alerts = free_money_alerts(pot, today) if is_current else []
+    if is_current:   # measures the month's deficit first if due (alerts: navbar menu)
+        from app.services.refloat_service import ensure_plan
+        ensure_plan(pot, bm, today)
     fm = free_money(pot, bm) if is_current else None
 
     total_spent = sum(item['metrics']['spent'] for item in cat_data)
@@ -75,7 +63,7 @@ def index():
     total_remaining = total_income - total_spent
 
     return render_template('dashboard/index.html',
-        bm=bm, total_income=total_income, income_expected=income_expected, cat_data=cat_data, alerts=alerts,
+        bm=bm, total_income=total_income, income_expected=income_expected, cat_data=cat_data,
         year=year, month=month, today=today,
         month_name=MONTHS_FR[month - 1].capitalize(),
         chart_data=chart_data,
@@ -84,15 +72,13 @@ def index():
         total_spent=total_spent,
         total_remaining=total_remaining,
         fm=fm,
-        balance_alerts=balance_alerts,
         editable=is_current,
     )
 
 
 def render_gauges(bm, today):
     """Gauge list fragment of a budget month (close/reopen buttons only on the current month)."""
-    days_in_month = calendar.monthrange(bm.year, bm.month)[1]
-    current_day = today.day if (bm.year, bm.month) == (today.year, today.month) else days_in_month
+    current_day, days_in_month = budget_day(bm.pot, bm.year, bm.month, today)
     editable = (bm.year, bm.month) == target_budget_month(today, bm.pot.income_start_day or 1)
     return render_template('dashboard/_category_list.html', cat_data=build_gauges(bm, current_day, days_in_month),
                            year=bm.year, month=bm.month, editable=editable)

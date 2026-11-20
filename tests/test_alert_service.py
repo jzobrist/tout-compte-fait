@@ -135,7 +135,7 @@ def test_overdraft_alert_uses_sum_of_limits(db, household_clean, mails):
 
 def test_no_alert_when_unknown_or_no_income(db, household_clean, mails):
     h = household_clean
-    _acc(db, h.common, -100.0)
+    _acc(db, h.common, -100.0, limit=200.0)  # real balance fine: free alerts only
     _with_income(h.common, 0.0)
     assert alert_service.check_free_money_alerts(h.common, J4_TODAY) == []
     _acc(db, h.common, None, name='CSV')

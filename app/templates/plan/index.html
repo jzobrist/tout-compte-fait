@@ -2,7 +2,6 @@
 {% block title %}Plan du mois{% endblock %}
 {% block content %}
 <div hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
-  {% include 'dashboard/_balance_alerts.html' %}
   <h5 class="fw-bold mb-3">Plan du mois</h5>
   {{ common_html|safe }}
   {% include 'plan/_my_transfer_arrow.html' %}

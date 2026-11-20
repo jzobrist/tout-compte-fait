@@ -279,9 +279,8 @@ def build_view(pot, today, year=None, month=None, user=None):
     personal = (dict(waiting=ceiling_service.personal_waiting(pot, bm.year, bm.month),
                      validated=ceilings.frozen, unallocated=ceilings.unallocated)
                 if pot.kind == 'personal' else None)
-    from app.services.alert_service import alert_types_for
     fm = free_money(pot, bm)
-    return dict(pot=pot, bm=bm, fm=fm, balance_alerts=alert_types_for(pot, fm), plan=plan,
+    return dict(pot=pot, bm=bm, fm=fm, plan=plan,
                 has_deficit=has_deficit,
                 share=monthly_share(plan) if plan is not None else 0.0,
                 envelope_part=envelope_part(plan) if has_deficit else 0.0,
